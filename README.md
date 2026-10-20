@@ -94,7 +94,17 @@ gold key-fret band.* Every form and planter is shown in colour in
 
 ## Install
 
-Needs Python 3.8 or later. Nothing to install beyond the one file.
+One line, on any Linux with Python 3.8 or later:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/xuuxij/xuuxij-bonsai/main/install.sh | sh
+```
+
+That puts the program in `~/.local/bin` and the default settings in
+`~/.config/xuuxij-bonsai.conf` (kept if you already have one). Add `-s -- --system` after
+`sh` to install into `/usr/local/bin` instead. Run the same line again to update.
+
+By hand, from a clone, it is the same two files:
 
 ```sh
 sudo install -m 755 xuuxij-bonsai /usr/local/bin/xuuxij-bonsai
