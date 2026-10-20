@@ -49,6 +49,7 @@ def main():
         if inherit is None:
             tree.draw_pot()
         tree.draw()
+        tree.mulch()
         tree.autumn()
         tree.fall()
         after_fall = faults(tree)

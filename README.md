@@ -203,7 +203,10 @@ swept, so the carpet piles up a little more with every autumn. The carpet behave
 heap: a landing leaf falls into any hole under it and slides down a slope until it rests
 on something, piles stay within two rows of their ground and the overflow slides off the
 planter's ends, and after each crumble whatever was resting on the trunk falls or slides
-until the heap is stable.
+until the heap is stable. Only a share of what falls stays (`keep`); between autumns a
+share of the buried leaves goes to mulch and the heap sinks a little; and a leaf landing
+on a slope sometimes knocks the one under it loose, which tumbles down while the newcomer
+drops into its place.
 
 **The clock.** With `cycle` set, every tree gets exactly that long from its first cell to
 the next tree's first cell: the growing takes a quarter of it at a step chosen for that

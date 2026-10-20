@@ -150,6 +150,7 @@ SMALLEST = (20, 30)   # rows, columns: below this no tree is drawn, only a word
 TICK = 0.08           # seconds per step of the falling leaves and the dust
 DEBRIS_HOLD = 9.0     # seconds the dust lies in the planter before the next tree
 AVALANCHE = 3.0       # seconds allowed in a timed cycle for the heap to settle after the crumble
+MULCH = 0.15          # share of the buried leaves that goes to mulch between autumns
 
 
 # ---- the planters ------------------------------------------------------------------
@@ -1850,8 +1851,8 @@ class Tree:
         trunk's base rolls off beside it. A pile stays within `pile` rows of its
         ground, and the overflow slides off the planter's ends."""
         top = self.surface(x)
-        if kind == "fallen" and self.rng.random() > self.cfg["keep"]:
-            return False
+        if self.rng.random() > self.cfg["keep"]:
+            return False  # leaves and dust alike: only a share stays
         if top == self.H - 1 and self.rng.random() > 0.25:
             return False
         direction = self.rng.choice((-1, 1))
@@ -1875,7 +1876,44 @@ class Tree:
         entry = self.grid.get((y, x))
         self.grid[(y, x)] = (kind, char, attr, entry)
         self.put(y, x, char, attr)
+        # Now and then a leaf landing on a slope knocks the one under it loose: that
+        # one tumbles down the slope, and the newcomer drops into its place.
+        below = (y + 1, x)
+        if (kind == "fallen" and self.is_carpet(below) and self.rng.random() < 0.3
+                and any(self.passable((y + 1, x + dx)) and self.passable((y + 2, x + dx))
+                        and not self.is_carpet((y + 2, x + dx)) for dx in (-1, 1))):
+            self.knock(below)
         return True
+
+    def knock(self, cell):
+        """Lifts the leaf at `cell` and lets it find its rest again; then whatever
+        was resting on it comes down."""
+        kind, char, attr, under = self.grid.pop(cell)
+        if under is not None:
+            self.grid[cell] = under
+        self.restore(cell)
+        spot = self.land(cell[0], cell[1])
+        if spot is not None and spot != cell:
+            entry = self.grid.get(spot)
+            self.grid[spot] = (kind, char, attr, entry)
+            self.put(spot[0], spot[1], char, attr)
+        above = (cell[0] - 1, cell[1])
+        if self.is_carpet(above) and (self.passable(cell) and not self.is_carpet(cell)):
+            self.knock(above)
+
+    def mulch(self):
+        """A share of the buried leaves goes to mulch between one autumn and the next:
+        the heap lowers a little before the new leaves come. Returns 'key' or 'resize'
+        if interrupted, else None."""
+        rng = self.rng
+        buried = [c for c in self.grid if self.is_carpet(c) and self.is_carpet((c[0] - 1, c[1]))]
+        gone = rng.sample(buried, int(len(buried) * MULCH))
+        for cell in gone:
+            under = self.grid.pop(cell)[3]
+            if under is not None:
+                self.grid[cell] = under
+            self.restore(cell)
+        return self.collapse() if gone else None
 
     def collapse(self):
         """After the ground under the carpet has changed, every leaf or grain of dust
@@ -2120,7 +2158,7 @@ def run_tree(scr, cfg, tree, t_start, once=False):
         def mark():
             return tree.sleep_until(t_start + cycle) if crumble_at is not None else None
 
-        for phase in (tree.autumn, tree.fall, bare, tree.crumble, mark):
+        for phase in (tree.mulch, tree.autumn, tree.fall, bare, tree.crumble, mark):
             outcome = phase()
             if outcome:
                 break
