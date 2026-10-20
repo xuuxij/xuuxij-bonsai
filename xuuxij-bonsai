@@ -1,0 +1,1854 @@
+#!/usr/bin/env python3
+"""xuuxij-bonsai - grows bonsai trees in the terminal until a key is pressed.
+
+Each tree is planned first, in one of the classic forms drawn by weight: the informal
+upright (moyogi), the formal upright (chokkan), the slanting tree (shakan), the literati
+(bunjin) and the cascade (kengai), a fifth of the uprights with a twin trunk. The trunk
+is a spline with movements that tighten toward the top, tapering from a wide base with
+surface roots; a few main branches leave it in turn, each ending in a cloud of foliage,
+a back pad gives depth, and the whole sits off-centre in an ornate planter matched to
+the form (after the pots of the Omiya Bonsai Art Museum and the classic Chinese and
+Japanese containers), the composition centred on the screen. Then it is drawn like pen
+strokes, bottom up, one cell after another with a bright moving tip, the leaves opening
+as buds. The finished tree holds for a while; then its leaves turn, let go in the breeze
+and float down to the soil; the bare tree is held, then crumbles into the planter; and a
+new one grows out of the same planter, over the carpet the last one left, which piles up
+a little more with every autumn. Only a key clears it, by ending the screensaver.
+
+Settings live in ~/.config/xuuxij-bonsai.conf, one "key = value" per line. The file
+is read again before every tree, so an edit shows on the next tree. A flag on the
+command line wins over the file. --help lists the settings; --print-config shows
+what a run would use.
+"""
+
+import argparse
+import collections
+import curses
+import heapq
+import itertools
+import math
+import os
+import random
+import re
+import sys
+import time
+
+CONFIG_PATH = os.path.expanduser("~/.config/xuuxij-bonsai.conf")
+
+COLORS = {"black": 0, "red": 1, "green": 2, "yellow": 3,
+          "blue": 4, "magenta": 5, "cyan": 6, "white": 7}
+
+STYLES = ("moyogi", "chokkan", "shakan", "bunjin", "kengai")
+LEAF_SETS = (("&*", 65), ("*^", 35))
+
+# key: (default, kind, lowest, highest, what it does)
+SETTINGS = {
+    "style":       ("auto", "style", None, None, "the tree's form: auto (drawn by the weights in styles), or "
+                                                 "moyogi (informal upright), chokkan (formal upright), shakan "
+                                                 "(slanting), bunjin (literati), kengai (cascade)"),
+    "styles":      ("moyogi:15 chokkan:10 shakan:30 bunjin:30 kengai:15", "weights", None, None,
+                    "how often each form appears, as name:weight"),
+    "cycle":       ("10m", "duration", None, None, "every tree gets exactly this long, first cell to the next "
+                                                   "tree's first cell, by pacing (10m, 600s; 0 = no clock)"),
+    "twin":        ("auto", "twin", None, None, "a twin trunk: auto (a fifth of the uprights and slanting trees), yes or no"),
+    "height":      (0.60, float, 0.1, 1.0, "the height budget: each form's height scales with it (0.6 = as designed)"),
+    "width":       (0.75, float, 0.1, 1.0, "the width budget: each form's spread scales with it (0.75 = as designed)"),
+    "leafiness":   (1.0, float, 0.3, 3.0, "size of the clouds of foliage"),
+    "leaves":      ("auto", "leaves", None, None, "characters inside a cloud of foliage: auto (drawn per tree: "
+                                                  "&* broadleaf or *^ needles), or your own"),
+    "leaf_edge":   (".,'", str, None, None, "characters around a cloud's edge"),
+    "step":        (0.10, float, 0.0, 10.0, "seconds per cell a branch grows sideways (bigger = slower)"),
+    "fronts":      (1, int, 1, 8, "strokes drawn at the same time (1 = a single pen)"),
+    "aspect":      (2.0, float, 1.0, 3.0, "how much longer a step up takes than a step sideways"),
+    "ease":        (1.0, float, 0.0, 2.0, "how much a branch slows toward its end (0 = steady)"),
+    "gap":         (8.0, float, 0.0, 20.0, "pause before a new stroke starts, in steps"),
+    "bud_delay":   (15, int, 0, 60, "steps before a bud (.) opens into a leaf (0 = no buds)"),
+    "highlight":   (True, bool, None, None, "a bright tip travels along each growing branch"),
+    "wait":        (45.0, float, 0.0, 3600.0, "seconds a finished tree stays before its leaves turn"),
+    "autumn":      (70.0, float, 0.0, 600.0, "seconds the leaves take to change colour, top pad first"),
+    "autumn_colors": ("yellow red", "colors", None, None, "the colours the leaves turn, in order"),
+    "fall":        (180.0, float, 10.0, 3600.0, "seconds the leaves take to fall"),
+    "bare":        (12.0, float, 0.0, 600.0, "seconds the bare tree is held before it crumbles"),
+    "crumble":     (20.0, float, 0.5, 600.0, "seconds the bare tree takes to crumble into the planter"),
+    "trunk_color": ("yellow", "color", None, None, "colour of the trunk and branches"),
+    "leaf_color":  ("green", "color", None, None, "colour of the leaves and moss"),
+    "pot":         ("auto", "pot", None, None, "the planter: auto (matched to the form), no, or one of "
+                                               "drum celadon teizan hexagon oval bunjin"),
+    "stand":       ("auto", "stand", None, None, "a rosewood display stand under the planter: auto, yes or no"),
+    "pot_color":   ("auto", "color_auto", None, None, "the planter's body colour: auto (each design's own) or a colour"),
+    "trim_color":  ("auto", "color_auto", None, None, "the planter's trim colour: auto or a colour"),
+    "stand_color": ("red", "color", None, None, "the stand's colour (red = rosewood)"),
+    "seed":        (None, "seed", None, None, "a number gives the same trees every time; none = random"),
+}
+
+CLEAR_SECONDS = 3.0   # the soft clear from the top when the planter changes
+AIR_ABOVE = 14        # rows kept clear above the apex on a tall screen: two clouds' height
+MARGIN = 10           # columns kept clear at each side of the composition on a wide screen
+DESIGN_ROWS = 60      # the tree height the proportions were designed at; smaller trees scale down
+SMALLEST = (20, 30)   # rows, columns: below this no tree is drawn, only a word
+TICK = 0.08           # seconds per step of the falling leaves and the dust
+DEBRIS_HOLD = 9.0     # seconds the dust lies in the planter before the soil is swept
+
+
+# ---- the planters ------------------------------------------------------------------
+# Each design is a function of an odd width W returning rows of (text, paint); paint
+# has one letter per cell: b body colour, B body + bold (a lit lip, sheen, relief
+# catching the light), t trim colour, T trim + bold (gold bands, white studs), g gravel,
+# m moss, s the cast shadow (dark grey), space = nothing drawn. The trunk stands on the
+# SOIL row (row 1 of every pot); row 0 is the far rim, seen over the soil, and the trunk
+# draws over it. The pot is drawn before the tree. After the Omiya Bonsai Art Museum's
+# pots B-003 and B-321, the Teizan and Yixing rectangles with cloud feet, the hexagonal
+# cascade pots, and the Chinese rosewood stands with openwork aprons.
+
+SOIL = ". : , . : . , : . "
+
+
+def soil(n, offset=0):
+    """n cells of gravel with three small moss patches (two on a narrow pot)."""
+    text = "".join(SOIL[(i + offset) % len(SOIL)] for i in range(n))
+    paint = ["g" if c != " " else " " for c in text]
+    patches = (n // 6, n // 2 + 4, n - n // 6 - 3) if n >= 36 else (n // 5, n - n // 5 - 3)
+    for start in patches:
+        for k in range(3):
+            if 0 <= start + k < n:
+                text = text[: start + k] + ",,'"[k] + text[start + k + 1:]
+                paint[start + k] = "m"
+    return text, "".join(paint)
+
+
+def run(n, core, link="", filler=" "):
+    """core (link core)*k centred in n cells; leftover is filler, split both sides."""
+    k = max(0, (n - len(core)) // (len(core) + len(link)))
+    s = core + (link + core) * k
+    left = (n - len(s)) // 2
+    return filler * left + s + filler * (n - len(s) - left)
+
+
+def row(parts):
+    text = "".join(p[0] for p in parts)
+    paint = "".join(p[1] if len(p[1]) == len(p[0]) else p[1] * len(p[0]) for p in parts)
+    return text, paint
+
+
+def shadow(W, inset):
+    """The cast shadow on the table, a cell longer to the right (light from the left)."""
+    inset = max(1, inset)
+    return row([(" " * inset, " "), ("-" * (W - 2 * inset + 1), "s"), (" " * (inset - 1), " ")])
+
+
+def soil_row(W, capl, capr):
+    st, sp = soil(W - len(capl) - len(capr) - 2)
+    return row([(capl, "b"), (" ", " "), (st, sp), (" ", " "), (capr, "b")])
+
+
+def pot_drum(W):
+    """Studded drum (after B-321, a white Cochin drum pot): nail-head stud bands top and
+    bottom, a low body, a foot ring. Round pots suit any informal tree."""
+    def studs():
+        return row([("(", "b"), (run(W - 2, "o", "___", "_"), "T"), (")", "b")])
+    return [
+        row([("   .-", "B"), ("=" * (W - 10), "B"), ("-.   ", "B")]),
+        soil_row(W, " .'", "`. "),
+        studs(),
+        row([("|", "b"), ("=" * (W - 2), "B"), ("|", "b")]),
+        row([("|", "b"), ("=" * (W - 2), "b"), ("|", "b")]),
+        studs(),
+        row([(" \\", "b"), ("_" * (W - 4), "b"), ("/ ", "b")]),
+        row([("    (", "b"), ("_" * (W - 10), "b"), (")    ", "b")]),
+        shadow(W, 3),
+    ]
+
+
+def pot_celadon(W):
+    """Round celadon pot (after B-003): a wavy rim, a running floral scroll in relief
+    on the upper body, a lotus-petal relief below, a foot ring. One colour: the relief
+    reads as light catching the raised parts."""
+    n = W - 2
+    return [
+        row([(" ", " "), (run(W - 2, "_.-~-.", "", "_"), "B"), (" ", " ")]),
+        soil_row(W, "(", ")"),
+        row([("(", "B"), (run(W - 2, ".-~-.", "_", "_"), "B"), (")", "B")]),
+        row([("|", "b"), (run(n, " _.-._    "), "B"), ("|", "b")]),
+        row([("|", "b"), (run(n, "'     `-.-"), "B"), ("|", "b")]),
+        row([("|", "b"), ("=" * n, "b"), ("|", "b")]),
+        row([("|", "b"), (run(n, "\\  /"), "B"), ("|", "b")]),
+        row([("|", "b"), (run(n, " \\/ "), "b"), ("|", "b")]),
+        row([(" \\", "b"), ("_" * (W - 4), "b"), ("/ ", "b")]),
+        row([("   (", "b"), ("_" * (W - 8), "b"), (")   ", "b")]),
+        shadow(W, 2),
+    ]
+
+
+def pot_teizan(W):
+    """Rectangle with an open lip, a carved key-fret band and cloud feet (after the
+    Teizan and Yixing rectangles). Deep, angular, stout feet: the pot for an upright."""
+    n = W - 4
+    return [
+        row([("  ", " "), ("_" * (W - 4), "B"), ("  ", " ")]),
+        soil_row(W, " |", "| "),
+        row([("|", "B"), ("_" * (W - 2), "B"), ("|", "B")]),
+        row([(" |", "b"), ("=" * n, "B"), ("| ", "b")]),
+        row([(" |", "b"), ("=" * n, "b"), ("| ", "b")]),
+        row([(" |", "b"), (run(n, " ___  "), "T"), ("| ", "b")]),
+        row([(" |", "b"), (run(n, "|  _| "), "T"), ("| ", "b")]),
+        row([(" |", "b"), (run(n, "|_|   "), "T"), ("| ", "b")]),
+        row([(" |", "b"), ("_" * n, "b"), ("| ", "b")]),
+        row([("   (_o)", "b"), (" " * (W - 14), " "), ("(o_)   ", "b")]),
+        shadow(W, 2),
+    ]
+
+
+def pot_hexagon(W):
+    """Tall six-sided cascade pot (as tall as it is wide): flared lip, dark side facets,
+    a diamond lattice band, block feet. For the cascade and the narrow tree."""
+    n = W - 6
+
+    def face(fill, p):
+        return row([("|", "b"), ("#|", "b"), (fill, p), ("|#", "b"), ("|", "b")])
+    return [
+        row([("  .", "B"), ("_" * (W - 6), "B"), (".  ", "B")]),
+        soil_row(W, " /", "\\ "),
+        row([("/", "B"), ("_" * (W - 2), "B"), ("\\", "B")]),
+        face("=" * n, "B"),
+        face(run(n, " /\\ "), "T"),
+        face(run(n, "<  >"), "T"),
+        face(run(n, " \\/ "), "T"),
+        face("=" * n, "b"),
+        face("=" * n, "b"),
+        face("=" * n, "b"),
+        face("_" * n, "b"),
+        row([(" \\", "b"), ("_" * (W - 4), "b"), ("/ ", "b")]),
+        row([("   [_]", "b"), (" " * (W - 12), " "), ("[_]   ", "b")]),
+        shadow(W, 2),
+    ]
+
+
+def pot_oval(W):
+    """Glazed oval with a rolled lip, a running wave scroll in relief, soft lines and
+    delicate feet: the pot for the wide informal or slanting tree."""
+    n = W - 6
+    return [
+        row([("    __.--", "B"), ("~" * (W - 18), "B"), ("--.__    ", "B")]),
+        soil_row(W, "  .-~'", "`~-.  "),
+        row([(" (", "B"), ("=" * (W - 4), "B"), (") ", "B")]),
+        row([("  \\", "b"), (run(n, " _.-._    "), "B"), ("/  ", "b")]),
+        row([("   \\", "b"), (run(n, "'     `-.-")[1:-1], "B"), ("/   ", "b")]),
+        row([("    \\", "b"), ("=" * (W - 10), "b"), ("/    ", "b")]),
+        row([("     \\", "b"), ("=" * (W - 12), "b"), ("/     ", "b")]),
+        row([("      \\", "b"), ("_" * (W - 14), "b"), ("/      ", "b")]),
+        row([("        (__)", "b"), (" " * (W - 24), " "), ("(__)        ", "b")]),
+        shadow(W, 6),
+    ]
+
+
+def pot_bunjin(W):
+    """The literati pot: shallow, round, plain, with a wavy rim; the ornament is the
+    tall stand under it."""
+    return [
+        row([("  .", "B"), ("-" * (W - 6), "B"), (".  ", "B")]),
+        soil_row(W, " (", ") "),
+        row([("(", "B"), (run(W - 2, ".-~-.", "_", "_"), "B"), (")", "B")]),
+        row([(" \\", "b"), ("_" * (W - 4), "b"), ("/ ", "b")]),
+        row([("   (", "b"), ("_" * (W - 8), "b"), (")   ", "b")]),
+    ]
+
+
+STAND_LEGS = {"stand": 0, "tall": 3, "cascade": 24}
+
+
+def stand_rows(W, stand):
+    """Rosewood stand (after the Chinese rosewood stands: an openwork apron cut in
+    cusps, cabriole legs, scroll feet, a stretcher). The pot's feet stand on row 0.
+    `tall` adds leg rows for the literati display, `cascade` many more for a tree
+    that hangs beside it."""
+    n = W - 2
+    legs = [row([("|", "b"), (" " * n, " "), ("|", "b")])] * STAND_LEGS[stand]
+    return [
+        row([(" ", " "), ("_" * n, "B"), (" ", " ")]),
+        row([("|", "b"), ("_" * n, "b"), ("|", "b")]),
+        row([("|", "b"), (run(n, "  ___ ", "", " "), "b"), ("|", "b")]),
+        row([("|", "b"), (run(n, "_/   \\", "", "_"), "b"), ("|", "b")]),
+    ] + legs + [
+        row([("(_/", "b"), ("_" * (W - 6), "b"), ("\\_)", "b")]),
+        shadow(W, 0),
+    ]
+
+
+# name: (rows, share of the canopy's spread, (body colour, trim colour))
+POTS = {
+    "drum":    (pot_drum, 0.45, ("white", "white")),
+    "celadon": (pot_celadon, 0.45, ("cyan", "cyan")),
+    "teizan":  (pot_teizan, 0.72, ("red", "yellow")),
+    "hexagon": (pot_hexagon, 0.37, ("blue", "yellow")),
+    "oval":    (pot_oval, 0.72, ("blue", "blue")),
+    "bunjin":  (pot_bunjin, 0.90, ("white", "white")),
+}
+LEAST_POT = {"bunjin": 35, "hexagon": 33}  # the rest 25
+
+
+def has_shadow(rows):
+    return all(p in "s " for p in rows[-1][1])
+
+
+def block_height(kind, stand):
+    """Rows the planter takes with its stand (the pot's shadow is dropped on a stand)."""
+    rows = POTS[kind][0](41)
+    n = len(rows)
+    if stand:
+        n += len(stand_rows(41, stand)) - (1 if has_shadow(rows) else 0)
+    return n
+
+
+def convert(key, raw):
+    """One setting's text as its value; ValueError says what is wrong with it."""
+    _default, kind, low, high, _text = SETTINGS[key]
+    text = str(raw).strip()
+    if kind is bool:
+        if text.lower() in ("yes", "true", "on", "1"):
+            return True
+        if text.lower() in ("no", "false", "off", "0"):
+            return False
+        raise ValueError(f"{key} must be yes or no, not {text!r}")
+    if kind == "color":
+        if text.lower() not in COLORS:
+            raise ValueError(f"{key} must be one of {', '.join(COLORS)}, not {text!r}")
+        return text.lower()
+    if kind == "color_auto":
+        if text.lower() == "auto":
+            return "auto"
+        if text.lower() not in COLORS:
+            raise ValueError(f"{key} must be auto or one of {', '.join(COLORS)}, not {text!r}")
+        return text.lower()
+    if kind == "colors":
+        names = text.lower().split()
+        bad = [n for n in names if n not in COLORS]
+        if not names or bad:
+            raise ValueError(f"{key} must be one or more of {', '.join(COLORS)}, not {text!r}")
+        return " ".join(names)
+    if kind == "style":
+        name = text.lower()
+        if name == "auto" or name in STYLES:
+            return name
+        raise ValueError(f"style must be auto or one of {', '.join(STYLES)}, not {text!r}")
+    if kind == "weights":
+        weights = {}
+        for item in text.lower().split():
+            name, _sep, number = item.partition(":")
+            if name not in STYLES or not number.isdigit():
+                raise ValueError(f"{key} must be name:weight pairs with names from "
+                                 f"{', '.join(STYLES)}, not {item!r}")
+            weights[name] = int(number)
+        if not any(weights.values()):
+            raise ValueError(f"{key} needs at least one weight above 0")
+        return " ".join(f"{n}:{w}" for n, w in weights.items())
+    if kind == "duration":
+        m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([smh]?)", text.lower())
+        if not m:
+            raise ValueError(f"{key} must be a time like 10m, 90s or 600, or 0, not {text!r}")
+        seconds = float(m.group(1)) * {"": 1, "s": 1, "m": 60, "h": 3600}[m.group(2)]
+        if seconds and seconds < 120:
+            raise ValueError(f"{key} must be 0 or at least two minutes, not {text!r}")
+        return seconds
+    if kind == "twin":
+        name = text.lower()
+        if name == "auto":
+            return "auto"
+        if name in ("yes", "true", "on", "1"):
+            return "yes"
+        if name in ("no", "false", "off", "0"):
+            return "no"
+        raise ValueError(f"twin must be auto, yes or no, not {text!r}")
+    if kind == "leaves":
+        if text.lower() == "auto":
+            return "auto"
+        if not text:
+            raise ValueError("leaves needs at least one character, or auto")
+        return text
+    if kind == "pot":
+        name = text.lower()
+        if name in ("yes", "true", "on", "1", "auto"):
+            return "auto"
+        if name in ("no", "false", "off", "0", "none"):
+            return "no"
+        if name in POTS:
+            return name
+        raise ValueError(f"pot must be auto, no or one of {', '.join(POTS)}, not {text!r}")
+    if kind == "stand":
+        name = text.lower()
+        if name == "auto":
+            return "auto"
+        if name in ("yes", "true", "on", "1"):
+            return "yes"
+        if name in ("no", "false", "off", "0", "none"):
+            return "no"
+        raise ValueError(f"stand must be auto, yes or no, not {text!r}")
+    if kind == "seed":
+        if text.lower() in ("", "none", "random"):
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            raise ValueError(f"seed must be a whole number or none, not {text!r}") from None
+    if kind is str:
+        if not text:
+            raise ValueError(f"{key} needs at least one character")
+        return text
+    try:
+        value = kind(text)
+    except ValueError:
+        what = "a whole number" if kind is int else "a number"
+        raise ValueError(f"{key} must be {what}, not {text!r}") from None
+    if not low <= value <= high:
+        raise ValueError(f"{key} must be between {low:g} and {high:g}, not {text}")
+    return value
+
+
+def load_config(path):
+    """The defaults, overlaid with the settings file (a missing file is fine)."""
+    cfg = {key: spec[0] for key, spec in SETTINGS.items()}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except FileNotFoundError:
+        return cfg
+    for number, line in enumerate(lines, 1):
+        if line.lstrip().startswith("#"):
+            continue
+        line = re.split(r"\s+#", line, maxsplit=1)[0].strip()
+        if not line:
+            continue
+        if "=" not in line:
+            raise ValueError(f"{path} line {number}: expected key = value")
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key not in SETTINGS:
+            raise ValueError(f"{path} line {number}: unknown setting {key!r}")
+        try:
+            cfg[key] = convert(key, value)
+        except ValueError as exc:
+            raise ValueError(f"{path} line {number}: {exc}") from None
+    return cfg
+
+
+def parse_args(argv):
+    p = argparse.ArgumentParser(prog="xuuxij-bonsai", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--config", default=CONFIG_PATH, help="settings file (default %(default)s)")
+    for key, (default, kind, _low, _high, text) in SETTINGS.items():
+        flag = "--" + key.replace("_", "-")
+        if kind is bool:
+            p.add_argument(flag, dest=key, action=argparse.BooleanOptionalAction, default=None,
+                           help=f"{text} (default {'yes' if default else 'no'})")
+        else:
+            p.add_argument(flag, dest=key, default=None, metavar="VALUE",
+                           help=f"{text} (default {show(default)})")
+    p.add_argument("--once", action="store_true", help="grow one tree, hold, then exit")
+    p.add_argument("--print-config", action="store_true",
+                   help="print the settings a run would use, then exit")
+    return p.parse_args(argv)
+
+
+def settings(args):
+    """The file's settings with the command line's flags on top."""
+    cfg = load_config(args.config)
+    for key in SETTINGS:
+        value = getattr(args, key)
+        if value is None:
+            continue
+        try:
+            cfg[key] = value if isinstance(value, bool) else convert(key, value)
+        except ValueError as exc:
+            raise ValueError(f"--{key.replace('_', '-')}: {exc}") from None
+    return cfg
+
+
+def show(value):
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if value is None:
+        return "none"
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)
+
+
+GROW_SHARE = 0.25     # of a timed cycle: the growing
+BARE_TARGET = 20.0    # seconds the bare tree stands in a timed cycle, give or take the fall's tail
+LANDING_TAIL = 22.0   # seconds the last leaves take to land after the release window
+
+
+def make_attrs(cfg):
+    """Screen attributes: every console colour as a pair, and the parts drawn in them."""
+    color = {}
+    if curses.has_colors():
+        curses.start_color()
+        background = -1
+        try:
+            curses.use_default_colors()
+        except curses.error:
+            background = curses.COLOR_BLACK
+        for i, (name, number) in enumerate(COLORS.items()):
+            curses.init_pair(10 + i, number, background)
+            color[name] = curses.color_pair(10 + i)
+    else:
+        color = {name: curses.A_NORMAL for name in COLORS}
+    wood, leaf = color[cfg["trunk_color"]], color[cfg["leaf_color"]]
+    return {"color": color,
+            "wood": wood,
+            "tip": wood | curses.A_BOLD if cfg["highlight"] else wood,
+            "leaf": (leaf, leaf | curses.A_BOLD), "bud": leaf, "moss": leaf,
+            "gravel": color["white"], "shadow": color["black"] | curses.A_BOLD,
+            "stand": color[cfg["stand_color"]],
+            "turn": [color[name] | curses.A_BOLD for name in cfg["autumn_colors"].split()]}
+
+
+def catmull_rom(points, lo, hi):
+    """x for every integer row from lo to hi through the control points [(row, x)],
+    rows increasing, as a Catmull-Rom spline (the ends held)."""
+    pts = sorted(points)
+    xs = {}
+    for r in range(lo, hi + 1):
+        i = 0
+        while i < len(pts) - 2 and r > pts[i + 1][0]:
+            i += 1
+        (r0, x0), (r1, x1) = pts[i], pts[i + 1]
+        u = 0.0 if r1 == r0 else max(0.0, min(1.0, (r - r0) / (r1 - r0)))
+        p0 = pts[i - 1][1] if i > 0 else x0
+        p3 = pts[i + 2][1] if i + 2 < len(pts) else x1
+        xs[r] = 0.5 * ((2 * x1) + (-p0 + x1 * 0 + x0 * 0 + x1 * 0) * 0 +  # placeholder, replaced below
+                       0)
+        # the standard form: 0.5 * (2 p1 + (-p0 + p2) u + (2 p0 - 5 p1 + 4 p2 - p3) u^2 + (-p0 + 3 p1 - 3 p2 + p3) u^3)
+        p1, p2 = x0, x1
+        xs[r] = 0.5 * (2 * p1 + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u
+                       + (-p0 + 3 * p1 - 3 * p2 + p3) * u * u * u)
+    return xs
+
+
+def gentle_path(points, lo, hi, limit=2):
+    """The spline rounded to columns, its movements scaled down until no row moves
+    more than `limit` columns from the one before. Returns {row: x}."""
+    base_x = points[0][1]
+    scale = 1.0
+    for _attempt in range(12):
+        scaled = [(r, base_x + (x - base_x) * scale) for r, x in points]
+        xs = catmull_rom(scaled, lo, hi)
+        path = {r: int(round(x)) for r, x in xs.items()}
+        rows = sorted(path)
+        if all(abs(path[b] - path[a]) <= limit for a, b in zip(rows, rows[1:])):
+            return path
+        scale *= 0.85
+    return path
+
+
+class Stroke:
+    """One line of the drawing: a trunk, a branch, or a cloud of foliage."""
+    __slots__ = ("kind", "cells", "after", "pos", "lit", "cover")
+
+    def __init__(self, kind):
+        self.kind = kind
+        self.cells = []      # (y, x, text, attr) in drawing order; wood's attr is None
+        self.after = []      # strokes queued when this one finishes
+        self.pos = 0
+        self.lit = None      # the cell drawn bright until the tip moves on
+        self.cover = set()   # cells of this twig its own cloud may grow over
+
+
+TRUNK_KINDS = ("trunk", "twin", "fall")
+BRANCH_KINDS = ("primary", "secondary", "fallb")
+
+
+class Tree:
+    def __init__(self, scr, cfg, rng, attrs, inherit=None):
+        """A new tree. With `inherit` (the planter and the screen's grid of the tree
+        before it) it grows in the same planter, out of the carpet the last one left."""
+        self.scr, self.cfg, self.rng, self.attrs = scr, cfg, rng, attrs
+        self.H, self.W = scr.getmaxyx()
+        self.cx = self.W // 2  # the base's column while planning; the composition is placed after
+        self.air = min(AIR_ABOVE, max(3, self.H // 9))   # rows kept clear above the apex
+        self.margin = min(MARGIN, max(2, self.W // 13))  # columns kept clear at each side
+        self.trunk_done = None
+        self.report = {}
+        self.planter = inherit["planter"] if inherit else None
+        # What the screen holds, for drawing things over it and putting it back:
+        # (y, x) -> ("wood", char, attr) | ("leaf", char, attr, what was under it)
+        #           | ("pot", char, attr) | ("soil", char, attr)
+        #           | ("fallen" | "dust", char, attr, what was under it)
+        self.grid = inherit["grid"] if inherit else {}
+        # The form, the twin, the leaf set, the planter: drawn once per tree.
+        self.style = cfg["style"] if cfg["style"] != "auto" else self.draw_style()
+        self.twin = self.style == "moyogi" and (cfg["twin"] == "yes"
+                                                or (cfg["twin"] == "auto" and rng.random() < 0.2))
+        self.leaf_set = cfg["leaves"] if cfg["leaves"] != "auto" else self.draw_leaves()
+        if self.planter:
+            self.pot_kind, self.stand_kind = self.planter[0], self.planter[1]
+        else:
+            self.pot_kind, self.stand_kind = self.pot_for()
+            if self.H < 45 or self.W < 50:
+                self.pot_kind, self.stand_kind = "no", None  # no room for a planter
+            elif self.H < 80 and self.stand_kind and self.style != "kengai":
+                self.stand_kind = None  # a short screen: the planter without its stand
+        total = block_height(self.pot_kind, self.stand_kind) if self.pot_kind != "no" else 0
+        self.base = self.H - total + 1 if self.pot_kind != "no" else self.H - 1
+        self.report.update({"style": self.style, "twin": self.twin, "leaves": self.leaf_set,
+                            "planter": f"{self.pot_kind} on {self.stand_kind or 'no stand'}"
+                                       + (" (kept)" if self.planter else "")})
+        if self.style == "kengai":
+            self.first_side = rng.choice((-1, 1))  # the fall side, needed before planning
+            if self.planter:  # the cascade is planned in place over the planter it has
+                _k, _s, width, x0, _sw, _sx0 = self.planter
+                self.cx = x0 + self.planting_offset(width)
+        # Plan, lay the planter out, and place the whole composition: centred on the
+        # screen, or over the planter it inherits; if it will not fit between the
+        # margins, plan it again narrower with the same dice.
+        state = rng.getstate()
+        shrink = 1.0
+        for _attempt in range(6):
+            rng.setstate(state)
+            self.plan(shrink)
+            if self.style != "kengai":
+                self.layout_pot()
+            if self.planter and self.style != "kengai":
+                _k, _s, width, x0, _sw, _sx0 = self.planter
+                self.translate(x0 + self.planting_offset(width) - self.cx)
+            lo, hi = self.composition_box()
+            if hi - lo + 1 <= self.W - 2 * self.margin and (not self.planter or (lo >= 0 and hi < self.W)):
+                break
+            shrink *= 0.9
+        if not self.planter:
+            self.translate((self.W - 1 - lo - hi) // 2)
+        lo, hi = self.composition_box()
+        self.report["composition"] = f"columns {lo} to {hi} (centre {(lo + hi) / 2:.1f} of {(self.W - 1) / 2})"
+        self.table_count = sum(1 for (y, x), e in self.grid.items() if y == self.H - 1 and e[0] in ("fallen", "dust"))
+
+    def planter_spec(self):
+        """What the next tree needs to grow in this planter."""
+        if not self.pot_rows:
+            return None
+        x0 = self.pot_rows[0][0]
+        stand = [r for r in self.pot_rows if r[3]]
+        return (self.pot_kind, self.stand_kind, self.pot_width, x0,
+                len(stand[0][1]) if stand else 0, stand[0][0] if stand else 0)
+
+    # ---- the draws -----------------------------------------------------------------------
+
+    def draw_style(self):
+        weights = {}
+        for item in self.cfg["styles"].split():
+            name, _sep, number = item.partition(":")
+            weights[name] = int(number)
+        if self.cfg["stand"] == "no" or self.cfg["pot"] == "no" or self.H < 100:
+            weights["kengai"] = 0  # a cascade needs its tall stand, and the height to hang beside it
+        if self.planter:  # the forms that suit the planter already standing there
+            if self.planter[1] == "cascade":
+                weights = {"kengai": weights.get("kengai", 10) or 10, "bunjin": weights.get("bunjin", 0)}
+            else:
+                weights["kengai"] = 0
+        names = [n for n in STYLES if weights.get(n, 0) > 0] or ["moyogi"]
+        return self.rng.choices(names, [weights.get(n, 1) for n in names])[0]
+
+    def draw_leaves(self):
+        return self.rng.choices([s for s, _w in LEAF_SETS], [w for _s, w in LEAF_SETS])[0]
+
+    def pot_for(self):
+        """The planter and stand for this form (a forced pot wins; the stand setting
+        wins over the form's choice)."""
+        cfg, rng = self.cfg, self.rng
+        if cfg["pot"] == "no":
+            return "no", None
+        if cfg["pot"] != "auto":
+            kind = cfg["pot"]
+            stand = "tall" if kind == "bunjin" else None
+            if self.style == "kengai":
+                stand = "cascade"
+        # The planter stands for the whole run, so it follows the owner's taste
+        # (2026-10-20: "big, wide, ornate ... like the big Japanese-style ones"), not
+        # the first tree's form: the rectangle or the oval, on a stand half the time.
+        # The narrow pots come only when named in the settings; the cascade's is its own.
+        elif self.style == "kengai":
+            kind, stand = "hexagon", "cascade"
+        else:
+            kind = rng.choice(("teizan", "oval"))
+            stand = "stand" if rng.random() < 0.5 else None
+        if cfg["stand"] == "no" and self.style != "kengai":
+            stand = None
+        elif cfg["stand"] == "yes" and stand is None:
+            stand = "tall" if kind == "bunjin" else "stand"
+        return kind, stand
+
+    @property
+    def s_share(self):
+        """The form's spread share, drawn once (kept on the instance)."""
+        if not hasattr(self, "_s_share"):
+            rng = self.rng
+            self._s_share = {"moyogi": rng.uniform(0.60, 0.80), "chokkan": rng.uniform(0.65, 0.75),
+                             "shakan": rng.uniform(0.55, 0.65), "bunjin": rng.uniform(0.30, 0.40),
+                             "kengai": 0.0}[self.style]
+        return self._s_share
+
+    # ---- planning ------------------------------------------------------------------------
+
+    def plan(self, shrink):
+        cfg, rng = self.cfg, self.rng
+        self.strokes, self.wood, self.trunk_rows = [], {}, {}
+        self.families, self.clouds = [], 0
+        self.pot_rows, self.pot_spec, self.rim, self.stand_span, self.stand_top = [], None, None, None, None
+        self.blocked = set()
+        self.table_room = self.W // 2
+        B = self.base
+        if self.style == "kengai":
+            self.plan_kengai(shrink)
+            return
+        r_share = {"moyogi": rng.uniform(0.55, 0.65), "chokkan": 0.60, "shakan": 0.55, "bunjin": 0.75}[self.style]
+        R = int(round(r_share * B * cfg["height"] / 0.6))
+        R = max(10, min(R, B - self.air))
+        # The spread follows the width budget, but never outgrows the tree's own height:
+        # on a short, wide screen the tree keeps its shape and leaves the sides empty.
+        S = int(round(self.s_share * cfg["width"] * self.W * shrink))
+        S = max(16, min(S, int(1.5 * R)))
+        self.R, self.S = R, S
+        self.scale = min(1.0, R / DESIGN_ROWS)  # every proportion below shrinks with a small tree
+        if self.style == "bunjin":
+            w0 = rng.randint(3, 4) if R >= 30 else rng.randint(2, 3)
+        else:
+            w0 = {"moyogi": max(6, min(9, round(R / 8))), "chokkan": max(8, min(9, round(R / 7.5))),
+                  "shakan": max(6, min(7, round(R / 9)))}[self.style]
+            w0 = max(3, int(round(w0 * self.scale)))
+        self.w0 = w0
+        s = rng.choice((-1, 1))  # the side of the trunk's first movement, or of the lean
+        self.first_side = s
+        # The trunk's line.
+        if self.style == "moyogi":
+            A = rng.uniform(8, 14)
+            apex = rng.uniform(-6, 6)
+            points = [(0, 0), (0.35 * R, s * A), (0.65 * R, -0.55 * s * A), (0.88 * R, 0.25 * s * A), (R, apex)]
+        elif self.style == "chokkan":
+            points = [(0, 0), (R, 0)]
+        elif self.style == "shakan":
+            lean = rng.uniform(0.35, 0.55) * R * s
+            bow = rng.uniform(3, 6)
+            points = [(0, 0), (0.25 * R, lean * 0.25 - s * bow * 0.7), (0.5 * R, lean * 0.5 - s * bow),
+                      (0.75 * R, lean * 0.75 - s * bow * 0.7), (R, lean)]
+        else:
+            A = rng.uniform(12, 20)
+            lean = s * rng.uniform(-10, 16)
+            points = [(0, 0), (0.3 * R, s * A), (0.55 * R, -0.7 * s * A), (0.78 * R, 0.5 * s * A),
+                      (0.92 * R, -0.3 * s * A), (R, lean)]
+        points = [(int(round(r)), x) for r, x in points]
+        path = gentle_path(points, 0, R)  # height above the soil -> x offset
+        if self.style == "chokkan" and rng.random() < 0.5:
+            h = rng.randint(R // 4, 3 * R // 4)
+            path[h] += rng.choice((-1, 1))  # at most one wobble
+        self.trunk_path = {B - h: self.cx + x for h, x in path.items()}
+        self.report.update({"R": R, "S": S, "w0": w0, "control points": [(h, round(x, 1)) for h, x in points],
+                            "apex offset": path[R] - path[0]})
+        nebari = {"moyogi": ("__/", "\\__"), "chokkan": ("__/", "\\__"),
+                  "shakan": (("___/", "\\_") if s > 0 else ("_/", "\\___")),
+                  "bunjin": ("_/", "\\_")}[self.style]
+        trunk = self.make_trunk("trunk", [(B - h, self.cx + path[h]) for h in range(R + 1)], w0, nebari)
+        twin = self.plan_twin(trunk, R, S, w0, s) if self.twin else None
+        groups = self.plan_primaries(trunk, R, S, s)
+        if twin is not None:
+            groups += self.plan_twin_primaries(twin, S)
+        back = self.plan_back_pad(trunk, R, groups)
+        self.plan_clouds(trunk, twin, groups, back)
+
+    def make_trunk(self, kind, cells_xy, w0, nebari=None, taper_from=0, taper_total=None):
+        """A trunk stroke along the rows of `cells_xy` (bottom first), tapering from w0
+        at its start, bark glyphs at the edges by the slope, roots on the first row."""
+        s = Stroke(kind)
+        n = len(cells_xy)
+        total = taper_total or n
+        for i, (y, x) in enumerate(cells_xy):
+            t = min(1.0, (taper_from + i) / max(1, total - 1))
+            w = max(1, int(round(1 + (w0 - 1) * (1 - t) ** 1.3)))
+            dx = cells_xy[i + 1][1] - x if i + 1 < n else 0
+            glyph = "|" if dx == 0 or (nebari and i < 2) else ("/" if dx > 0 else "\\")
+            text = glyph + "|" * (w - 2) + glyph if w >= 3 else glyph * w
+            x0 = x - w // 2
+            if i == 0 and nebari:
+                left, right = nebari
+                text, x0 = left + text + right, x0 - len(left)
+            s.cells.append((y, x0, text, None))
+            self.trunk_rows.setdefault(y, (x0, len(text)))
+            if kind == "trunk":
+                self.trunk_rows[y] = (x0, len(text))
+            for k in range(len(text)):
+                self.wood[(y, x0 + k)] = s
+        self.strokes.append(s)
+        return s
+
+    def trunk_x_at(self, y):
+        """The main trunk's centre column on row `y` (clamped to its ends)."""
+        rows = sorted(self.trunk_path)
+        y = max(rows[0], min(rows[-1], y))
+        return self.trunk_path[y]
+
+    def primary_heights(self, n, f1):
+        """Shares of R where the main branches leave: f1, then gaps shrinking upward,
+        the top one at 0.85."""
+        weights = [1.25, 1.0, 0.85, 0.75, 0.70][: max(0, n - 1)]
+        span = 0.85 - f1
+        total = sum(weights) or 1
+        heights, h = [f1], f1
+        for w in weights:
+            h += span * w / total
+            heights.append(h)
+        return heights
+
+    def plan_primaries(self, trunk, R, S, s):
+        cfg, rng, B = self.cfg, self.rng, self.base
+        style = self.style
+        n = {"moyogi": rng.randint(3, 5), "chokkan": rng.randint(4, 6),
+             "shakan": rng.randint(3, 4), "bunjin": rng.randint(2, 3)}[style]
+        f1 = {"moyogi": 0.40, "chokkan": 0.33, "shakan": 0.38, "bunjin": rng.uniform(0.62, 0.70)}[style]
+        heights = self.primary_heights(n, f1)
+        first = {"moyogi": s, "bunjin": s, "shakan": -s, "chokkan": rng.choice((-1, 1))}[style]
+        L0 = S / 2 - 4
+        groups, listing = [], []
+        side = first
+        twin_apex = min(self.twin_path) if self.twin and hasattr(self, "twin_path") else None
+        for k, h in enumerate(heights):
+            y = B - int(round(h * R))
+            if y not in self.trunk_rows:
+                continue
+            if twin_apex is not None and y >= twin_apex - 4:
+                side = -self.twin_side  # beside the twin, the branches go the other way
+            x0, w = self.trunk_rows[y]
+            start_x = x0 + w if side > 0 else x0 - 1
+            least = max(4, int(round(10 * self.scale)))
+            length = (max(4, int(round(rng.randint(8, 14) * self.scale))) if style == "bunjin"
+                      else max(least, int(round(L0 * (1 - 0.17 * k)))))
+            profile = {"moyogi": "curve", "bunjin": "curve", "chokkan": "chokkan", "shakan": "shakan"}[style]
+            p = self.plan_branch("primary", y, start_x, side, length, profile)
+            if p is not None:
+                secs = [] if style == "bunjin" else self.plan_secondaries(p, side)
+                groups.append((p, secs, k))
+                listing.append((round(h, 2), len(p.cells)))
+            side = -side
+        self.report["primaries (height share, length)"] = listing
+        return groups
+
+    def plan_secondaries(self, p, side):
+        rng = self.rng
+        secs = []
+        for try_at in (0.55, 0.58, 0.61, 0.52):
+            jy, jx, _t, _a = p.cells[min(len(p.cells) - 2, int(len(p.cells) * try_at))]
+            length = max(3, int(round(rng.randint(6, 9) * self.scale)))
+            sec = self.plan_branch("secondary", jy - 1, jx + side, side, length, "twig")
+            if sec is not None:
+                secs.append(sec)
+                break
+        return secs
+
+    def plan_branch(self, kind, y, x, side, length, profile):
+        """A branch as one line, by profile: `curve` dips then rises; `chokkan` runs
+        level then rises gently; `shakan` runs level after one early dip; `fallb`
+        rises gently all along; `twig` rises steeply from its first cell."""
+        rng = self.rng
+        s = Stroke(kind)
+        cap_on = profile == "curve"
+        if profile == "curve":
+            s0 = -1 / rng.uniform(3.5, 4.5) if rng.random() < 0.7 else 0.0
+            s1 = 1 / rng.uniform(2.0, 2.5)
+        elif profile == "twig":
+            s0 = s1 = 1 / rng.uniform(1.5, 2.0)
+        elif profile == "fallb":
+            s0 = s1 = 1 / 5.0
+        else:
+            s0 = s1 = 0.0
+        acc = 0.95 if profile == "twig" else 0.0
+        dip_at = int(round(length * rng.uniform(0.10, 0.25))) if profile == "shakan" else -1
+        cy, cx, last_nudge, level_run = y, x, -9, 0
+        cells = []
+        for j in range(length):
+            if profile == "chokkan":
+                slope = 0.0 if j < 0.6 * length else 1 / 5.0
+            elif profile == "shakan":
+                slope = 0.0 if j < 0.6 * length else 1 / 6.0
+            else:
+                slope = s0 + (s1 - s0) * j / max(1, length - 1)
+            if j == 0:
+                dy = -1 if profile == "twig" else 0
+            else:
+                acc += slope
+                if cap_on and j - last_nudge >= 6 and rng.random() < 0.125:
+                    acc += rng.choice((-0.4, 0.4))  # a rare, gentle waver
+                    last_nudge = j
+                dy = 0
+                if cap_on:
+                    cap = 5 if abs(slope) < 0.1 else 3
+                elif profile == "shakan":
+                    cap = 6  # level, parallel to the ground, lifting a row every six cells
+                else:
+                    cap = 10 ** 6
+                if j == dip_at:
+                    dy = 1
+                elif acc >= 1:
+                    acc, dy = acc - 1, -1
+                elif acc <= -1:
+                    acc, dy = acc + 1, 1
+                elif level_run >= cap:
+                    if slope >= 0:
+                        acc, dy = max(acc - 1, -0.5), -1
+                    else:
+                        acc, dy = min(acc + 1, 0.5), 1
+                cy, cx = cy + dy, cx + side
+            level_run = level_run + 1 if dy == 0 else 0
+            if not (0 <= cx < self.W and self.air <= cy < self.H - 2):
+                break
+            if (cy, cx) in self.wood or (cy, cx) in self.blocked:
+                break
+            if kind == "fallb" and self.stand_span and self.stand_span[0] - 1 <= cx <= self.stand_span[1] + 1 \
+                    and cy >= self.stand_top:
+                break  # not across the stand
+            glyph = "~" if dy == 0 else ("/" if (side > 0) == (dy < 0) else "\\")
+            cells.append((cy, cx, glyph, None))
+        if len(cells) < (5 if kind == "fallb" else 3):
+            return None
+        s.cells = cells
+        for y1, x1, _t, _a in cells:
+            self.wood[(y1, x1)] = s
+        self.strokes.append(s)
+        return s
+
+    def plan_twin(self, trunk, R, S, w0, s):
+        """A second trunk forking just above the soil, shorter and thinner, leaning
+        away from the main trunk's first movement."""
+        rng, B = self.rng, self.base
+        fork = rng.randint(2, 5)
+        y_f = B - fork
+        if y_f not in self.trunk_rows:
+            return None
+        R2 = int(round(R * rng.uniform(0.55, 0.70)))
+        s2 = -s
+        apex = rng.randint(10, 16)
+        w2 = max(2, int(round(w0 * 0.6)))
+        x0, w = self.trunk_rows[y_f]
+        x_edge = (x0 + w + w2 // 2) if s2 > 0 else (x0 - 1 - w2 // 2)  # beside the trunk, not in it
+        points = [(0, 0), (max(2, int(0.12 * R2)), s2 * 3), (int(0.45 * R2), s2 * apex * 0.55),
+                  (int(0.8 * R2), s2 * (apex - 2)), (R2, s2 * apex)]
+        path = gentle_path(points, 0, R2)
+        cells = [(y_f - h, x_edge + path[h]) for h in range(R2 + 1)]
+        self.twin_path = {y: x for y, x in cells}
+        self.twin_R, self.twin_side = R2, s2
+        self.report["twin"] = f"forks {fork} rows up, R2 {R2}, apex {s2 * apex:+d} cols"
+        return self.make_trunk("twin", cells, w2)
+
+    def plan_twin_primaries(self, twin, S):
+        rng = self.rng
+        R2, s2 = self.twin_R, self.twin_side
+        L0 = S / 2 - 4
+        groups = []
+        for k, (h, share) in enumerate(((0.45, 0.6), (0.72, 0.45))):
+            y = min(self.twin_path, key=lambda yy: abs(yy - (max(self.twin_path) - int(h * R2))))
+            x = self.twin_path[y]
+            w = next((len(t) for yy, x0, t, _a in twin.cells if yy == y), 1)
+            x0 = x - w // 2
+            start_x = x0 + w if s2 > 0 else x0 - 1
+            p = self.plan_branch("primary", y, start_x, s2, max(8, int(round(L0 * share))), "curve")
+            if p is not None:
+                groups.append((p, self.plan_secondaries(p, s2), 10 + k))
+        return groups
+
+    def plan_back_pad(self, trunk, R, groups):
+        """One pad behind the trunk at mid height, drawn never over wood, so the trunk
+        and the branches show in front of it."""
+        if self.style not in ("moyogi", "chokkan", "shakan") or not groups:
+            return None
+        rng, B = self.rng, self.base
+        cy = B - int(round(rng.uniform(0.50, 0.56) * R))
+        cx = self.trunk_x_at(cy)
+        first_rx = self.pad_radii(groups[0][0])[0]
+        rx = max(6, int(round(0.55 * first_rx)))
+        ry = int(round(rx / 3.5)) + 1
+        self.report["back pad"] = f"centre ({cy}, {cx}), rx {rx}, ry {ry}"
+        return (None, rx, ry, cy, cx, (cy + 1 - ry, cy + 1, cx - rx, cx + rx))
+
+    def pad_radii(self, p):
+        """The radii of a branch's pad: about 2:1 in square units, overhanging the tip."""
+        lf = self.cfg["leafiness"] * self.scale
+        if self.style == "bunjin":
+            rx = max(3, int(round(self.rng.randint(8, 12) * lf)))
+            ry = max(2, int(round(self.rng.randint(3, 4) * lf)))
+        elif p.kind == "fallb":
+            rx = max(3, int(round(self.rng.randint(7, 11) * lf)))
+            ry = max(2, int(round(self.rng.randint(3, 4) * lf)))
+        else:
+            rx = max(3, int(round((0.5 * len(p.cells) + 4) * self.cfg["leafiness"])))
+            ry = max(2, int(round(rx / 3.5)) + 1)
+        return rx, ry
+
+    def cloud(self, twig, rx, ry, at=0.70):
+        """A cloud's box and centre: over the twig at `at` of its length."""
+        cy, cx = twig.cells[int(len(twig.cells) * at)][:2]
+        return (twig, rx, ry, cy, cx, (cy + 1 - ry, cy + 1, cx - rx, cx + rx))
+
+    @staticmethod
+    def near(a, b):
+        return a[0] - 2 <= b[1] and b[0] - 2 <= a[1] and a[2] - 4 <= b[3] and b[2] - 4 <= a[3]
+
+    def plan_clouds(self, trunk, twin, groups, back):
+        """A pad per branch family, the apex pads, the back pad; air between families;
+        and the drawing order: trunk, twin, back pad, families lowest first, apex last."""
+        cfg, rng, B = self.cfg, self.rng, self.base
+        lf = cfg["leafiness"]
+        R = self.R
+        families = []  # [members]; a member = (twig, rx, ry, cy, cx, box)
+        for p, secs, k in groups:
+            rx, ry = self.pad_radii(p)
+            families.append([self.cloud(p, rx, ry)])
+        boxes = [f[0][5] for f in families]
+        # The twin's pads keep the air rule against the main tree's.
+        if twin is not None:
+            main_boxes = [f[0][5] for f, (p, _s, k) in zip(families, groups) if k < 10]
+            kept = []
+            for f, g in zip(families, groups):
+                if g[2] >= 10 and any(self.near(f[0][5], b) for b in main_boxes):
+                    self.drop_branch(g[0])
+                    for sec in g[1]:
+                        self.drop_branch(sec)
+                    continue
+                kept.append((f, g))
+            families, groups = [f for f, _g in kept], [g for _f, g in kept]
+            boxes = [f[0][5] for f in families]
+        # Apex pads: the main one at 0.90 R (the trunk ends two rows inside it); the
+        # literati's is optional; the twin gets a small one.
+        apexes = []
+        if self.style != "bunjin" or rng.random() < 0.6:
+            apexes.append(self.apex_pad(trunk, self.trunk_path, B - R, 0.90, (10, 14), (4, 5)))
+        if twin is not None:
+            apexes.append(self.apex_pad(twin, self.twin_path, min(self.twin_path), 0.90, (8, 10), (4, 4)))
+        if twin is not None and apexes[0] is not None and self.near(apexes[0][5], apexes[-1][5]):
+            apexes.pop()  # the twin's apex pad would touch the main one: the twin ends bare
+        for apex in apexes:
+            if apex is not None:
+                boxes.append(apex[5])
+        self.clouds = len(boxes)
+        # Secondaries whose cloud would touch another family's pad go.
+        for f, (p, secs, k) in zip(families, groups):
+            own = f[0][5]
+            for sec in list(secs):
+                c = self.cloud(sec, max(3, round(8 * lf * self.scale)), max(2, round(4 * lf * self.scale)))
+                if any(b is not own and self.near(c[5], b) for b in boxes):
+                    self.drop_branch(sec)
+                    secs.remove(sec)
+                    continue
+                f.append(c)
+                self.clouds += 1
+        # The crown: an apex pad touching the top family's pad joins it.
+        main_apex = apexes[0] if apexes and apexes[0] is not None and self.style != "bunjin" or (
+            apexes and apexes[0] is not None and apexes[0][0] is trunk) else None
+        if main_apex is not None and families:
+            top = max(range(len(families)), key=lambda i: -groups[i][0].cells[0][0] if groups[i][2] < 10 else -10 ** 6)
+            if groups[top][2] < 10 and self.near(main_apex[5], families[top][0][5]):
+                families[top].append(main_apex)
+                apexes = [a for a in apexes if a is not main_apex]
+        order = sorted(range(len(families)), key=lambda i: -groups[i][0].cells[0][0])  # lowest first
+        pads = {i: self.fill_pad(families[i]) for i in order}
+        self.report["pads (centre, rx, ry)"] = [(f[0][3], f[0][4], f[0][1], f[0][2]) for f in families]
+        back_pad = self.fill_pad([back], never_over_wood=True) if back is not None else None
+        apex_pads = [self.fill_pad([a]) for a in apexes if a is not None]
+        chain = [trunk] + ([twin] if twin is not None else []) + ([back_pad] if back_pad is not None else [])
+        for i in order:
+            p, secs, _k = groups[i]
+            chain.extend([p] + secs + [pads[i]])
+        chain.extend(apex_pads)
+        for a, b in zip(chain, chain[1:]):
+            a.after.append(b)
+
+    def apex_pad(self, trunk, path, top_y, share, rx_range, ry_range):
+        """A low, wide dome over the top of a trunk, its base at `share` of the
+        trunk's height; the trunk ends two rows inside it."""
+        rng, lf = self.rng, self.cfg["leafiness"] * self.scale
+        bottom = max(path)
+        R = bottom - top_y
+        apex_y = bottom - int(round(share * R))
+        apex_x = (path.get(apex_y - 1, path[top_y]) + path[top_y]) // 2
+        rx = max(3, int(round(rng.randint(*rx_range) * lf)))
+        ry = max(2, int(round(rng.randint(*ry_range) * lf)))
+        for y1, x1, text, _a in trunk.cells:
+            if y1 < apex_y - ry + 2:
+                for k in range(len(text)):
+                    self.wood.pop((y1, x1 + k), None)
+        trunk.cells = [c for c in trunk.cells if c[0] >= apex_y - ry + 2]
+        return (trunk, rx, ry, apex_y - 1, apex_x, (apex_y - ry, apex_y, apex_x - rx, apex_x + rx))
+
+    def drop_branch(self, s):
+        if s in self.strokes:
+            self.strokes.remove(s)
+        for y1, x1, _t, _a in s.cells:
+            if self.wood.get((y1, x1)) is s:
+                del self.wood[(y1, x1)]
+
+    def fill_pad(self, members, never_over_wood=False):
+        """One mass of leaves over a family's twigs: the union of a flat-bottomed dome
+        per twig, each cell by its nearest dome, full inside and feathering out at the
+        edge, lit along the top of the ideal dome; it grows from the branch's end
+        outward and over the wood beneath it."""
+        cfg, rng = self.cfg, self.rng
+        twigs = {m[0] for m in members if m[0] is not None}
+        boxes = [m[5] for m in members]
+        cover = set() if never_over_wood else {
+            cell for cell, owner in self.wood.items() if owner in twigs
+            and any(y0 <= cell[0] <= y1 and x0 <= cell[1] <= x1 for y0, y1, x0, x1 in boxes)}
+        twig0 = members[0][0]
+        if twig0 is None or twig0.kind in TRUNK_KINDS:
+            o_y, o_x = members[0][3], members[0][4]
+        else:
+            o_y, o_x = twig0.cells[-1][:2]
+        chosen = {}  # (y, x) -> (edge?, lit?)
+        for y in range(min(b[0] for b in boxes), max(b[1] for b in boxes) + 1):
+            for x in range(min(b[2] for b in boxes), max(b[3] for b in boxes) + 1):
+                if not (0 <= y <= self.H - 3 and 0 <= x < self.W) or (y, x) in self.blocked:
+                    continue
+                best = None
+                for _t, rx, ry, cy, cx, _b in members:
+                    if cy + 1 - ry <= y <= cy + 1:
+                        d = math.hypot((x - cx) / rx, (cy + 1 - y) / ry)
+                        if best is None or d < best[0]:
+                            best = (d, rx, ry, cy, cx)
+                if best is None or best[0] > 1:
+                    continue
+                d, rx, ry, cy, cx = best
+                if (y, x) in self.wood:
+                    if (y, x) not in cover:
+                        continue  # wood in front of this pad stays
+                elif rng.random() > (1.0 if d < 0.8 else (1 - d) / 0.2):
+                    continue  # covered wood always gets its leaf; the rest feathers out
+                edge = d > 0.8
+                dxn = (x - cx) / rx
+                y_top = cy + 1 - ry * math.sqrt(max(0.0, 1 - dxn * dxn))
+                lit = y < y_top + 0.4 * (cy + 1 - y_top)
+                chosen[(y, x)] = (edge, lit)
+        by_row = {}
+        for y, x in chosen:
+            by_row.setdefault(y, []).append(x)
+        for y, xs in by_row.items():  # no specks floating above the mass
+            if len(xs) < 4 and not any((y, x) in cover for x in xs):
+                for x in xs:
+                    del chosen[(y, x)]
+        spots = []
+        for (y, x), (edge, lit) in chosen.items():
+            char = rng.choice(cfg["leaf_edge"] if edge else self.leaf_set)
+            attr = self.attrs["leaf"][1 if lit and not edge else 0]
+            order = math.hypot((x - o_x) / 2, y - o_y) + rng.uniform(0, 0.5)
+            spots.append((order, y, x, char, attr))
+        spots.sort()
+        s = Stroke("leaf")
+        s.cells = [(y, x, char, attr) for _o, y, x, char, attr in spots]
+        s.cover = cover
+        self.strokes.append(s)
+        return s
+
+    # ---- the cascade ---------------------------------------------------------------------
+
+    def plan_kengai(self, shrink):
+        """The cascade: a short rising trunk with a crown, then the trunk arcs over the
+        rim and falls beside the tall stand, branches with hanging pads alternating down
+        it; the hexagon pot on the cascade stand."""
+        cfg, rng, B = self.cfg, self.rng, self.base
+        s = self.first_side  # the fall side
+        self.scale = min(1.0, (self.H - 30) / 90.0)  # the cascade's proportions, by the screen's height
+        rise = max(5, int(round(rng.randint(8, 12) * self.scale)))
+        fall_len = int(round(rng.randint(36, 42) * self.scale))
+        fall_len = max(12, min(fall_len, self.H - 6 - B))
+        total_len = rise + 2 + fall_len
+        self.R, self.S, self.w0 = rise, 0, 5
+        # The crown's size is drawn first: it sets the pot's width, and the pot's rim
+        # is where the rise climbs out to.
+        crown_rx = max(4, int(round(rng.randint(9, 11) * self.scale)))
+        crown_ry = max(2, int(round(rng.randint(3, 4) * self.scale)))
+        self.crown_spread = 2 * crown_rx + 14
+        if self.planter:
+            width = self.planter[2]
+        else:
+            width = max(LEAST_POT.get("hexagon", 25), min(self.W - 4, int(1.2 * self.crown_spread))) | 1
+        to_rim = int(round(0.35 * width)) + 1  # the base stands 35 % in from the fall side's edge
+        # One line: the rise climbs out over the rim (about 1.3 columns a row), and the
+        # fall continues from its top.
+        points = [(0, 0), (int(rise * 0.5), s * (to_rim + 1) * 0.4), (rise, s * (to_rim + 1))]
+        path = gentle_path(points, 0, rise, limit=2)
+        cells = [(B - h, self.cx + path[h]) for h in range(rise + 1)]
+        self.trunk_path = {y: x for y, x in cells}
+        trunk = self.make_trunk("trunk", cells, 5, ("_/", "\\_"), 0, total_len)
+        apex_y, x_top = cells[-1]
+        # A short branch on the inner side at 60 % of the rise carries the crown pad.
+        by = B - int(round(rise * 0.6))
+        x0, w = self.trunk_rows[by]
+        short = self.plan_branch("primary", by, x0 - 1 if s > 0 else x0 + w, -s,
+                                 max(4, int(round(rng.randint(8, 10) * self.scale))), "curve")
+        self.report.update({"rise": rise, "fall": fall_len, "crown": f"rx {crown_rx} ry {crown_ry}"})
+        self.layout_pot()
+        rim = self.pot_rows[0][0] + (self.pot_width - 1 if s > 0 else 0)
+        x_start = rim + s * 2  # the fall passes two columns outside the rim
+        # The fall: out a little from the top, down past the rim, then two gentle
+        # movements, never more than a column a row, within ten columns of the rim.
+        m1, m2 = rng.randint(6, 8), rng.randint(6, 10)
+        d_end = min(8, rng.randint(8, 16))
+        fpoints = [(apex_y, x_top), (apex_y + 2, x_top + 2 * s), (B - 2, x_start),
+                   (B + int(fall_len * 0.35), x_start + s * m1),
+                   (B + int(fall_len * 0.7), x_start + s * max(0, m1 - m2)),
+                   (B + fall_len, x_start + s * d_end)]
+        fpath = gentle_path(fpoints, apex_y + 1, B + fall_len, limit=1)
+        fcells = [(y, fpath[y]) for y in range(apex_y + 1, B + fall_len + 1)]
+        fall = self.make_trunk("fall", fcells, 3, None, rise + 1, total_len)
+        # The crown pad over the inner branch, and a small cap on the arc's top.
+        cap_rx, cap_ry = max(3, int(round(rng.randint(6, 8) * self.scale))), max(2, int(round(3 * self.scale)))
+        cap_box = (apex_y - cap_ry, apex_y, x_top - cap_rx, x_top + cap_rx)
+        crown_members = ([self.cloud(short, crown_rx, crown_ry)] if short is not None else [])
+        cap_members = [(trunk, cap_rx, cap_ry, apex_y - 1, x_top, cap_box),
+                       (fall, cap_rx, cap_ry, apex_y - 1, x_top, cap_box)]
+        # Branches down the fall, alternating sides, each with a hanging pad.
+        fgroups = []
+        y = B + rng.randint(5, 7)
+        side = s
+        k = 0
+        while y <= B + fall_len - 4:
+            x = fpath[y]
+            xw = next((len(t) for yy, x0, t, _a in fall.cells if yy == y), 1)
+            x0 = x - xw // 2
+            start_x = x0 + xw if side > 0 else x0 - 1
+            length = max(5, int(round(rng.randint(10, 16) * self.scale)))
+            br = self.plan_branch("fallb", y, start_x, side, length, "fallb")
+            if br is not None:
+                fgroups.append((br, [], k))
+                k += 1
+            side = -side
+            y += max(4, int(round(rng.randint(8, 11) * self.scale)))
+        self.report["fall branches (row, length)"] = [(g[0].cells[0][0], len(g[0].cells)) for g in fgroups]
+        self.report["fall x from the rim"] = f"{min(fpath[y] - rim for y in fpath if y >= B) * s} to " \
+                                             f"{max(fpath[y] - rim for y in fpath if y >= B) * s} cols"
+        # Pads: the crown and the cap first, then the hanging ones, kept apart.
+        crown_pad = self.fill_pad(crown_members) if crown_members else None
+        cap_pad = self.fill_pad(cap_members)
+        boxes = [c[5] for c in crown_members] + [cap_box]
+        fams = []
+        for br, _secs, _k in fgroups:
+            rx, ry = self.pad_radii(br)
+            c = self.cloud(br, rx, ry)
+            if any(self.near(c[5], b) for b in boxes):
+                self.drop_branch(br)
+                continue
+            boxes.append(c[5])
+            fams.append((br, c))
+        self.clouds = len(boxes)
+        pads = [(br, self.fill_pad([c])) for br, c in fams]
+        self.report["pads (centre, rx, ry)"] = [(c[3], c[4], c[1], c[2]) for _br, c in fams]
+        chain = [trunk] + ([short, crown_pad] if crown_pad is not None else []) + [fall, cap_pad]
+        for br, pad in pads:
+            chain.extend([br, pad])
+        for a, b in zip(chain, chain[1:]):
+            a.after.append(b)
+
+    # ---- the planter and the composition -------------------------------------------------
+
+    def spread(self):
+        """How many columns the finished tree covers."""
+        xs = [x + k for s in self.strokes for y, x, text, _a in s.cells for k in range(len(text))]
+        return max(xs) - min(xs) + 1 if xs else 20
+
+    def planting_offset(self, width):
+        """How far from the pot's left column the base stands, so it sits off-centre
+        in the pot as the form asks."""
+        s = self.first_side
+        if self.style == "kengai":
+            frac, from_left = 0.35, s < 0  # 35 % from the fall side's edge
+        elif self.style == "shakan":
+            frac, from_left = 0.38, s > 0  # from the edge away from the lean
+        elif self.style == "chokkan":
+            frac, from_left = 0.48, True
+        elif self.style == "bunjin":
+            frac, from_left = 0.35 + 0.05 * ((self.report.get("R", 7) % 7) / 6), self.report.get("apex offset", 0) >= 0
+        else:
+            frac, from_left = 0.43, s > 0  # from the edge opposite the first branch
+        if self.twin and self.style != "kengai":
+            frac, from_left = 0.45, self.twin_side > 0  # from the side away from the twin
+        offset = frac * width if from_left else (1 - frac) * width
+        self.report["planting"] = f"base {frac:.2f} of the pot's width from its {'left' if from_left else 'right'} edge"
+        return int(round(offset))
+
+    def planting(self, width):
+        """The pot's left column relative to the base column."""
+        return self.cx - self.planting_offset(width)
+
+    def layout_pot(self):
+        """Sizes the planter to the canopy and places it and its stand under the base,
+        off-centre as the form asks; draws nothing yet."""
+        if self.pot_kind == "no":
+            return
+        fn, share, _palette = POTS[self.pot_kind]
+        least = LEAST_POT.get(self.pot_kind, 25)
+        room = self.W - 2 * self.margin
+        if self.planter:  # the planter already standing there
+            _k, _s, width, x0, stand_w, sx0 = self.planter
+        elif self.style == "kengai":
+            width = max(least, min(room, int(1.2 * self.crown_spread))) | 1
+        else:
+            width = int(share * self.spread())
+            if self.cfg["pot"] == "auto":  # the run's planter: really wide, whatever grows first
+                width = max(width, int(0.6 * self.W))
+            width = max(least, min(room, width)) | 1
+        rows = fn(width)
+        if self.stand_kind and has_shadow(rows):
+            rows = rows[:-1]
+        if self.stand_kind and not self.planter:
+            # A display stand is wider than its pot; the cascade's is slender, so the
+            # pot overhangs it and the fall drops clear of its leg.
+            factor = {"stand": 1.25, "tall": 1.5, "cascade": 0.8}[self.stand_kind]
+            stand_w = max(21, min(room, int(width * factor))) | 1
+        elif not self.stand_kind:
+            stand_w = 0
+        self.pot_width = width
+        if not self.planter:
+            x0 = self.planting(width)
+        block = [(x0, text, paint, False) for text, paint in rows]
+        if self.stand_kind:
+            if not self.planter:
+                sx0 = x0 + width // 2 - stand_w // 2
+            srows = stand_rows(stand_w, self.stand_kind)
+            self.stand_top = self.H - len(srows)
+            self.stand_span = (sx0 + 1, sx0 + stand_w - 2)
+            block += [(sx0, text, paint, True) for text, paint in srows]
+        self.pot_rows = block
+        soil_text, soil_paint = rows[1]
+        gravel = [k for k, p in enumerate(soil_paint) if p in "gm"]
+        self.rim = (x0 + gravel[0], x0 + gravel[-1]) if gravel else None
+        self.pot_spec = (self.pot_kind, width, self.stand_kind, stand_w)
+        y_top = self.H - len(block)
+        # Nothing of the tree is drawn inside the planter's or the stand's outline.
+        self.blocked = {(y_top + i, bx0 + k) for i, (bx0, text, paint, _st) in enumerate(block)
+                        for k in range(len(text)) if i > 0}
+        last_x0, last_text, last_paint, _s = block[-1]
+        covered = sum(1 for p in last_paint if p != " ")
+        self.table_room = (self.W - covered) // 2  # the table's first row carpets at most half
+
+    def composition_box(self):
+        xs = [x + k for s in self.strokes for y, x, text, _a in s.cells for k in range(len(text))]
+        for x0, text, paint, _st in self.pot_rows:
+            xs += [x0 + k for k, p in enumerate(paint) if p != " "]
+        if self.style == "kengai":  # the hanging pads are planned after the planter
+            xs += [x0 + k for x0, text, paint, _st in self.pot_rows for k in range(len(text))]
+        return (min(xs), max(xs)) if xs else (self.cx, self.cx)
+
+    def translate(self, dx):
+        """Moves everything planned `dx` columns."""
+        if dx == 0:
+            return
+        for s in self.strokes:
+            s.cells = [(y, x + dx, text, attr) for y, x, text, attr in s.cells]
+            s.cover = {(y, x + dx) for y, x in s.cover}
+        self.wood = {(y, x + dx): s for (y, x), s in self.wood.items()}
+        self.trunk_rows = {y: (x0 + dx, w) for y, (x0, w) in self.trunk_rows.items()}
+        self.trunk_path = {y: x + dx for y, x in self.trunk_path.items()}
+        if hasattr(self, "twin_path"):
+            self.twin_path = {y: x + dx for y, x in self.twin_path.items()}
+        self.pot_rows = [(x0 + dx, text, paint, st) for x0, text, paint, st in self.pot_rows]
+        self.blocked = {(y, x + dx) for y, x in self.blocked}
+        if self.rim:
+            self.rim = (self.rim[0] + dx, self.rim[1] + dx)
+        if self.stand_span:
+            self.stand_span = (self.stand_span[0] + dx, self.stand_span[1] + dx)
+        self.cx += dx
+
+    def draw_pot(self, top_only=False):
+        """Draws the planter and its stand from their rows and paint; `top_only`
+        redraws just the far rim and the soil, where a crumbled trunk stood."""
+        cfg, color = self.cfg, self.attrs["color"]
+        if not self.pot_rows:
+            return
+        body_name, trim_name = POTS[self.pot_kind][2]
+        body = color[cfg["pot_color"] if cfg["pot_color"] != "auto" else body_name]
+        trim = color[cfg["trim_color"] if cfg["trim_color"] != "auto" else trim_name]
+        stand = self.attrs["stand"]
+        paints = {"b": body, "B": body | curses.A_BOLD, "t": trim, "T": trim | curses.A_BOLD,
+                  "g": self.attrs["gravel"], "m": self.attrs["moss"], "s": self.attrs["shadow"]}
+        y_top = self.H - len(self.pot_rows)
+        for i, (x0, text, paint, on_stand) in enumerate(self.pot_rows):
+            if top_only and i > 1:
+                break
+            y = y_top + i
+            for k, (ch, p) in enumerate(zip(text, paint)):
+                if p == " ":
+                    continue
+                attr = paints[p]
+                if on_stand and p in "bBtT":
+                    attr = stand | (curses.A_BOLD if p in "BT" else 0)
+                if top_only and (y, x0 + k) in self.grid:
+                    continue  # only where the crumbled trunk stood; the carpet stays
+                self.put(y, x0 + k, ch, attr)
+                self.grid[(y, x0 + k)] = ("soil" if p in "gm" else "pot", ch, attr)
+
+    # ---- drawing -----------------------------------------------------------------------
+
+    def put(self, y, x, text, attr):
+        if 0 <= y < self.H and 0 <= x < self.W:
+            try:
+                self.scr.addstr(y, x, text[: self.W - x], attr)
+            except curses.error:
+                pass  # the bottom-right cell refuses a write; nothing is lost
+
+    def delay(self, s):
+        """Seconds before stroke `s` draws its next cell."""
+        cfg = self.cfg
+        if s.kind == "leaf":
+            return cfg["step"]
+        if s.kind == "fall":
+            return cfg["step"] * 2.5
+        if s.kind in TRUNK_KINDS:
+            return cfg["step"] * cfg["aspect"] * 1.5
+        before, after = s.cells[s.pos - 1], s.cells[s.pos]
+        factor = cfg["aspect"] if after[0] != before[0] else 1.0
+        return cfg["step"] * factor * (0.8 + cfg["ease"] * s.pos / len(s.cells))
+
+    def growth_units(self):
+        """How long the tree takes to grow, in units of `step`: the pen draws one
+        stroke after another, each after its gap, each cell after its delay."""
+        kept = self.cfg
+        self.cfg = dict(kept, step=1.0)
+        units = 0.0
+        queue = collections.deque([self.strokes[0]])
+        while queue:
+            s = queue.popleft()
+            units += kept["gap"]
+            for i in range(1, len(s.cells)):
+                s.pos = i
+                units += self.delay(s)
+            s.pos = 0
+            queue.extend(s.after)
+        self.cfg = kept
+        return units
+
+    def pace(self, cycle, t_start):
+        """Sets this tree's tempo so that, from `t_start`, it grows in a quarter of
+        the cycle and its leaves have let go in time for the bare tree, the crumble
+        and the next tree's first cell at t_start + cycle. Returns the moment the
+        crumble should begin."""
+        cfg = self.cfg
+        units = max(1.0, self.growth_units())
+        step = max(0.03, min(0.4, GROW_SHARE * cycle / units))
+        grow = step * units
+        crumble_at = t_start + cycle - (cfg["crumble"] + 4 + DEBRIS_HOLD)
+        fall = (crumble_at - t_start) - grow - cfg["wait"] - cfg["autumn"] - LANDING_TAIL - BARE_TARGET
+        self.cfg = dict(cfg, step=step, fall=max(60.0, fall))
+        self.report["tempo"] = f"step {step:.3f} s, growing {grow:.0f} s, letting go over {self.cfg['fall']:.0f} s"
+        return crumble_at
+
+    def draw(self):
+        """Draws the tree; returns 'key' or 'resize' if one interrupts it, else None."""
+        cfg, attrs, grid = self.cfg, self.attrs, self.grid
+        events, order = [], itertools.count()
+        ready = collections.deque([self.strokes[0]])
+        active = 0
+
+        def start(t):
+            nonlocal active
+            while active < cfg["fronts"] and ready:
+                s = ready.popleft()
+                s.pos = 0
+                active += 1
+                heapq.heappush(events, (t + cfg["gap"] * cfg["step"], next(order), "stroke", s))
+
+        def wood(s, i, attr):
+            y, x, text, _a = s.cells[i]
+            if all(grid.get((y, x + k)) == ("wood", text[k], attr) for k in range(len(text))):
+                return False  # already there, exactly so
+            self.put(y, x, text, attr)
+            for k in range(len(text)):
+                grid[(y, x + k)] = ("wood", text[k], attr)
+            return True
+
+        def leaf(s, i, t):
+            y, x, char, attr = s.cells[i]
+            under = grid.get((y, x))
+            if under is not None and (y, x) not in s.cover:
+                return False
+            grid[(y, x)] = ("leaf", char, attr, under)  # the twig comes back when the leaf falls
+            if cfg["bud_delay"]:
+                self.put(y, x, ".", attrs["bud"])
+                heapq.heappush(events, (t + cfg["bud_delay"] * cfg["step"], next(order),
+                                        "bud", (y, x, char, attr)))
+            else:
+                self.put(y, x, char, attr)
+            return True
+
+        start(time.monotonic())
+        while events:
+            t = events[0][0]
+            wait = t - time.monotonic()
+            if wait > 0:
+                self.scr.refresh()
+                outcome = pause(self.scr, wait)
+                if outcome:
+                    return outcome
+            _t, _n, kind, item = heapq.heappop(events)
+            if kind == "bud":
+                self.put(*item)
+                continue
+            s = item
+            while s.pos < len(s.cells):  # cells that change nothing cost no time
+                i = s.pos
+                s.pos += 1
+                if s.kind == "leaf":
+                    changed = leaf(s, i, t)
+                else:
+                    changed = wood(s, i, attrs["tip"])
+                    if changed:
+                        if s.lit is not None:
+                            wood(s, s.lit, attrs["wood"])  # the tip moves on
+                        s.lit = i
+                if changed:
+                    break
+            if s.pos < len(s.cells):
+                heapq.heappush(events, (t + self.delay(s), next(order), "stroke", s))
+            else:
+                if s.lit is not None:
+                    wood(s, s.lit, attrs["wood"])
+                if s.kind == "trunk":
+                    self.trunk_done = t
+                ready.extend(s.after)
+                active -= 1
+            start(t)
+        self.scr.refresh()
+        return None
+
+    # ---- autumn: the leaves turn, fall, and the bare tree crumbles ---------------------
+
+    def restore(self, cell):
+        """Puts back what the screen holds at `cell`, or blank."""
+        entry = self.grid.get(cell)
+        if entry is None:
+            self.put(cell[0], cell[1], " ", 0)
+        else:
+            self.put(cell[0], cell[1], entry[1], entry[2])
+
+    def sleep_until(self, t):
+        """Shows the screen and waits until time `t`: 'key' or 'resize' if interrupted."""
+        wait = t - time.monotonic()
+        if wait > 0:
+            self.scr.refresh()
+            return pause(self.scr, wait)
+        return None
+
+    def surface(self, x):
+        """The row a falling thing settles on at column x: the soil inside the rim, a
+        stand's top, or the table at the bottom of the screen."""
+        if self.rim and self.rim[0] <= x <= self.rim[1]:
+            return self.base
+        if self.stand_span and self.stand_span[0] <= x <= self.stand_span[1]:
+            return self.stand_top - 1
+        return self.H - 1
+
+    def settle(self, x, kind, char, attr):
+        """Lays a fallen thing on its surface at column x, or on the pile there: a cell
+        is taken only when the one under it already holds a leaf or dust, so the piles
+        grow from the ground up, three rows at most on the soil (the second in front
+        of the far rim), two on a stand or the table. On the table only one leaf in
+        four stays, until half of its first row is covered; the rest fall past its
+        edge. False when there is no room."""
+        top = self.surface(x)
+        if top == self.H - 1 and self.rng.random() > 0.25:
+            return False
+        depth = 4 if top == self.base else 3
+        for y in range(top, top - depth, -1):
+            entry = self.grid.get((y, x))
+            below = self.grid.get((y + 1, x)) if y < top else None
+            if y < top and (below is None or below[0] not in ("fallen", "dust")):
+                return False  # nothing to pile on
+            if entry is None or entry[0] == "soil" or (y == self.base - 1 and entry[0] == "pot"):
+                if y == top == self.H - 1:
+                    if self.table_count >= self.table_room:
+                        return False
+                    self.table_count += 1
+                self.grid[(y, x)] = (kind, char, attr, entry)
+                self.put(y, x, char, attr)
+                return True
+            if entry[0] not in ("fallen", "dust"):
+                return False  # something solid: nothing piles on it
+        return False
+
+    def autumn(self):
+        """The leaves change colour over `autumn` seconds, the top pad first and the
+        lowest last, one here and one there: all to the first autumn colour, many on
+        to the next, bright."""
+        cfg, rng, turn = self.cfg, self.rng, self.attrs["turn"]
+        leaves = [c for c, e in self.grid.items() if e[0] == "leaf"]
+        if not leaves or not turn or cfg["autumn"] <= 0:
+            return None
+        leaves.sort(key=lambda c: c[0] + rng.uniform(-8, 8))
+        T, n = cfg["autumn"], len(leaves)
+        events = []
+        for i, cell in enumerate(leaves):
+            events.append((T * 0.7 * i / n, cell, 0))
+            if len(turn) > 1 and rng.random() < 0.6:
+                events.append((T * (0.5 + 0.5 * rng.random()), cell, 1))
+        events.sort()
+        t0 = time.monotonic()
+        for t, (y, x), k in events:
+            outcome = self.sleep_until(t0 + t)
+            if outcome:
+                return outcome
+            _kind, char, _attr, under = self.grid[(y, x)]
+            self.grid[(y, x)] = ("leaf", char, turn[k], under)
+            self.put(y, x, char, turn[k])
+        return None
+
+    def fall(self):
+        """The leaves let go a few a second, more in a gust every so often, and float
+        down over `fall` seconds: swaying, gliding now and then, tumbling as they
+        turn, carried by one slow breeze; they settle on the soil, a stand, or the
+        table."""
+        cfg, rng = self.cfg, self.rng
+        leaves = [c for c, e in self.grid.items() if e[0] == "leaf"]
+        if not leaves:
+            return None
+        rng.shuffle(leaves)
+        n, total = len(leaves), cfg["fall"]
+        gust_leaves = (total / 17.5) * 18.5  # what the gusts will carry
+        base_per_tick = max(1.0, (n - gust_leaves) / total) * TICK
+        flying, acc, i = [], 0.0, 0
+        t0 = time.monotonic()
+        t = t0
+        next_gust = t0 + rng.uniform(10, 25)
+        gust_end, gust_dir, gust_per_tick = t0, 1, 0.0
+        while i < n or flying:
+            wind = 0.3 * math.sin(2 * math.pi * (t - t0) / 30.0)  # the breeze everyone feels
+            if t >= next_gust and i < n:
+                gust_end, gust_dir = t + 2.0, rng.choice((-1, 1))
+                gust_per_tick = rng.randint(12, 25) / (2.0 / TICK)
+                next_gust = gust_end + rng.uniform(10, 25)
+            if t < gust_end:
+                wind += 0.4 * gust_dir
+                acc += gust_per_tick
+            acc += base_per_tick
+            while i < n and acc >= 1:  # a leaf lets go
+                acc -= 1
+                cell = leaves[i]
+                i += 1
+                _kind, _char, attr, under = self.grid.pop(cell)
+                if under is not None:
+                    self.grid[cell] = under
+                period = rng.uniform(1.2, 2.5)
+                flying.append({"y": float(cell[0]), "x": float(cell[1]), "attr": attr,
+                               "vy": rng.uniform(0.25, 0.5), "amp": rng.uniform(2.0, 6.0),
+                               "omega": 2 * math.pi * TICK / period, "phase": rng.uniform(0, 6.3),
+                               "glide_next": t + rng.uniform(2, 4), "glide_end": t, "cell": cell})
+            still = []
+            for f in flying:
+                f["x"] += wind
+                gliding = t < f["glide_end"]
+                if not gliding and t >= f["glide_next"]:
+                    f["glide_end"] = t + rng.uniform(0.6, 1.0)
+                    f["glide_next"] = f["glide_end"] + rng.uniform(2, 4)
+                    gliding = True
+                f["phase"] += f["omega"]
+                s, c = math.sin(f["phase"]), math.cos(f["phase"])
+                if gliding:  # a glide: nearly level, sliding the way it sways
+                    f["y"] += 0.1
+                    f["x"] += 0.5 if c > 0 else -0.5
+                else:
+                    f["y"] += f["vy"]
+                glyph = "&" if abs(s) > 0.7 else "*" if abs(s) > 0.3 else ("'" if c > 0 else ",")
+                x = max(0, min(self.W - 1, int(round(f["x"] + f["amp"] * s))))
+                y = int(round(f["y"]))
+                if y >= self.surface(x):  # lands as it was turning, in its colour
+                    self.restore(f["cell"])
+                    self.settle(x, "fallen", glyph, f["attr"] & ~curses.A_BOLD)
+                    continue
+                if (y, x) != f["cell"]:
+                    self.restore(f["cell"])
+                    f["cell"] = (y, x)
+                self.put(y, x, glyph, f["attr"])
+                still.append(f)
+            flying = still
+            t += TICK
+            outcome = self.sleep_until(t)
+            if outcome:
+                return outcome
+        return None
+
+    def crumble(self):
+        """The bare tree crumbles over `crumble` seconds, the branches from their tips
+        inward, then the trunks from the top down, the dust drifting into the planter
+        and lying there a while with the fallen leaves; the next tree grows out of it."""
+        cfg, rng = self.cfg, self.rng
+        steps = []
+        branches = [s for s in self.strokes if s.kind in BRANCH_KINDS]
+        for d in range(max((len(s.cells) for s in branches), default=0)):
+            steps.append([(s.cells[len(s.cells) - 1 - d][0], s.cells[len(s.cells) - 1 - d][1])
+                          for s in branches if d < len(s.cells)])
+        rows = {}
+        for s in self.strokes:
+            if s.kind in TRUNK_KINDS:
+                for y, x0, text, _a in s.cells:
+                    rows.setdefault(y, []).extend((y, x0 + k) for k in range(len(text)))
+        for y in sorted(rows):
+            steps.append(rows[y])
+        seen = set()
+        steps = [[c for c in dict.fromkeys(step) if self.grid.get(c, (None,))[0] == "wood"
+                  and c not in seen and not seen.add(c)] for step in steps]
+        per_step = cfg["crumble"] / max(1, len(steps))
+        dust, k = [], 0
+        t = time.monotonic()
+        next_step = t
+        while k < len(steps) or dust:
+            while k < len(steps) and t >= next_step - 1e-9:
+                for y, x in steps[k]:
+                    self.grid.pop((y, x), None)
+                    self.put(y, x, " ", 0)
+                    if rng.random() < 0.5:
+                        dust.append({"y": float(y), "x": max(0, min(self.W - 1, x + rng.choice((-1, 0, 0, 1)))),
+                                     "vy": rng.uniform(1.0, 1.8), "char": rng.choice(".:'"), "cell": None})
+                k += 1
+                next_step += per_step
+            still = []
+            for d in dust:
+                if d["cell"]:
+                    self.restore(d["cell"])
+                d["y"] += d["vy"]
+                y, x = int(round(d["y"])), d["x"]
+                if y >= self.surface(x):
+                    self.settle(x, "dust", ":", self.attrs["wood"])
+                    continue
+                self.put(y, x, d["char"], self.attrs["wood"])
+                d["cell"] = (y, x)
+                still.append(d)
+            dust = still
+            t += TICK
+            outcome = self.sleep_until(t)
+            if outcome:
+                return outcome
+        outcome = self.sleep_until(t + DEBRIS_HOLD)
+        if outcome:
+            return outcome
+        self.draw_pot(top_only=True)  # the rim and the gravel the trunk stood over come back
+        return None
+
+
+def pause(scr, seconds):
+    """Wait, watching the keyboard: 'key', 'resize', or None when the time is up."""
+    end = time.monotonic() + seconds
+    while True:
+        scr.timeout(max(0, int((end - time.monotonic()) * 1000)))
+        ch = scr.getch()
+        if ch == curses.KEY_RESIZE:
+            return "resize"
+        if ch != -1:
+            return "key"
+        if time.monotonic() >= end:
+            return None
+
+
+def clear_softly(scr, seconds):
+    """Clears the screen one row at a time from the top."""
+    rows, _cols = scr.getmaxyx()
+    for y in range(rows):
+        try:
+            scr.move(y, 0)
+            scr.clrtoeol()
+        except curses.error:
+            pass
+        scr.refresh()
+        outcome = pause(scr, seconds / rows)
+        if outcome:
+            return outcome
+    return None
+
+
+def run_tree(scr, cfg, tree, t_start, once=False):
+    """Grows the tree from `t_start` and takes it through its autumn. With a cycle
+    set, the tree is paced so the next one's first cell lands at t_start + cycle:
+    the bare tree stands until the crumble's moment, and nothing is cut short."""
+    cycle = cfg["cycle"]
+    crumble_at = tree.pace(cycle, t_start) if cycle else None
+    outcome = tree.draw()
+    if outcome is None:
+        outcome = pause(scr, cfg["wait"])
+    if outcome is None and not once:
+        def bare():
+            if crumble_at is not None:
+                return tree.sleep_until(crumble_at)
+            return pause(scr, cfg["bare"])
+
+        def mark():
+            return tree.sleep_until(t_start + cycle) if crumble_at is not None else None
+
+        for phase in (tree.autumn, tree.fall, bare, tree.crumble, mark):
+            outcome = phase()
+            if outcome:
+                break
+    return outcome
+
+
+def screensaver(scr, args, cfg):
+    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass
+    seed = cfg["seed"]
+    rng = random.Random(seed)
+    inherit = None  # the planter on the screen and the carpet in it, for the next tree
+    scr.erase()
+    rows, cols = scr.getmaxyx()
+    if rows < SMALLEST[0] or cols < SMALLEST[1]:  # no room for a tree: say so and wait for the key
+        word = f"a bonsai needs {SMALLEST[1]} by {SMALLEST[0]}; this is {cols} by {rows}"
+        try:
+            scr.addstr(rows // 2, max(0, (cols - len(word)) // 2), word[:cols])
+        except curses.error:
+            pass
+        scr.refresh()
+        while pause(scr, 3600) != "key":
+            pass
+        return
+    t_start = time.monotonic()
+    while True:
+        try:
+            fresh = settings(args)  # re-read, so an edit shows on the next tree
+        except ValueError:
+            fresh = cfg  # a half-saved edit keeps the last good settings
+        if fresh["seed"] != seed:
+            seed = fresh["seed"]
+            rng = random.Random(seed)
+        cfg = fresh
+        attrs = make_attrs(cfg)
+        tree = Tree(scr, cfg, rng, attrs, inherit)
+        if inherit is None:
+            tree.draw_pot()
+        log_path = os.environ.get("XUUXIJ_BONSAI_LOG")  # for timing checks only
+        if log_path:
+            with open(log_path, "a", encoding="utf-8") as fh:
+                fh.write(f"{time.time():.1f} {time.monotonic() - t_start:+.1f}s off the mark: "
+                         f"{tree.style}{' twin' if tree.twin else ''} in {tree.report['planter']}\n")
+        outcome = run_tree(scr, cfg, tree, t_start, args.once)
+        if outcome == "key" or (args.once and outcome is None):
+            return
+        # The next tree starts on the mark, the clock anchored to the first tree's
+        # start so a late landing never drifts the timer; without a cycle, right away.
+        t_start = t_start + cfg["cycle"] if cfg["cycle"] else time.monotonic()
+        if outcome == "resize":
+            inherit = None
+            scr.erase()
+            t_start = time.monotonic()
+        elif tree.planter_spec() is not None:
+            inherit = {"planter": tree.planter_spec(), "grid": tree.grid}
+
+
+def main(argv=None):
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    try:
+        cfg = settings(args)
+    except ValueError as exc:
+        print(f"xuuxij-bonsai: {exc}", file=sys.stderr)
+        return 2
+    if args.print_config:
+        for key in SETTINGS:
+            print(f"{key} = {show(cfg[key])}")
+        return 0
+    os.environ.setdefault("ESCDELAY", "25")  # Esc ends it at once, like any key
+    try:
+        curses.wrapper(screensaver, args, cfg)
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

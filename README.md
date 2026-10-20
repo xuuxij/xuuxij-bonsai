@@ -1,0 +1,229 @@
+# xuuxij-bonsai
+
+A bonsai screensaver for the text console. Each tree is planned in one of the classic
+forms, drawn stroke by stroke like a pen, holds, turns colour, drops its leaves in the
+breeze, crumbles into its planter, and a new one grows out of the same pot, through the
+carpet the last one left. Nothing but a key ends it. It can be set to give every tree
+exactly the same time, so it doubles as a timer.
+
+Plain ASCII, the console's eight colours plus bold, Python 3 with nothing outside the
+standard library. Made for a portrait monitor on a Linux console (135 columns by 120
+rows), but it adapts to any size above about 50 by 40.
+
+```
+                                        ,..&&&*&&*.. ''
+                                   ',.&&&*&*&&*****&&&&''
+                                    ,&*&***&**&*****&&&&.
+                            ', '&&&&**&**&&&***&&&&*&**&&'
+                          ..&&****&*&**&&'.    |
+                           *&&***&&&&&*&&'   /
+                          &&*&*&**&*&&***&*  ||
+                                         ~~~//
+                                           //
+                                          //
+                                         //   , ,,',*,. . .
+                                        //   ,&&&&&*&&&&**&' '
+                                      //  ***&**&*&**&&&&&&**
+                                     //,.&&*&&&**&**&&&***&*&&',
+                                    //   &&&&&&&*&***&*&*&**&**
+                                   //
+                                   |||
+                       &&**&,.     |||             '    ,,.'..
+                   '***&*&*&*&&,   |||           ,'*&**&******&***,.
+                  '&*&&&&&*&&***,.  \|\       .''*&*&&&&*&&*&&**&&**,, '
+                  ***&&**&*&&*&**'   \|\       &**&***&&&****&**&&*&&&,'
+                          |           \|\   ,'*&***&**&**&&*&&**&*&***&'.
+                          |            \|\,','******&****&*&&&&*****&&&'.
+                           \            \|\  \~~~~~
+                           |        .*&&\||\&*&*&*.
+              .,*&&**..'  ||       .&**&*\||\*****&,                 .,  ,'., .',,,.
+            &&*&&***&&*&*,||       ****&*&&\||\*&&&&           ' . '&&**&&&&**&&&**' .
+         ..&&*&*&*&**&**&**'\\               \||\            ' ',&&*&****&&*&&*&&&&***&& .,,
+          *&&*&**&***&&****||                \||\            .**&****&&&&&****&*&**&*&&**,'
+                           ||                  \||\        .,*****&**&*&&**&**&&&&&&&&&***',
+                           ||                   \||\        .*&*&*&***&&*****&**&&&*&&&&&*'
+                            \\                   \||\            /~~~
+           ''&*&*&'.        ||                    \||\       /~~~
+         ,,******&&*,       ||                     \|||\~~~~~
+         &&**&&&*&&*&*      ||                      \|||\
+        '&&&********&*'      \|\                     \|||\
+              ***&&&&'       |||                      \|||\
+        ''&&***&*&&&&*&&*',  |||                      |||||
+       ,&&&&&&&**&&**&&***&,'|||                      |||||
+       .**&*&&&&&&&&&&****&'  \|\                     |||||
+                              |||                     |||||
+                              |||                   /||||/
+                              |||                   ||||||
+                               \|\                 /||||/
+                              ||||                 ||||||
+                              ||||                /||||/
+                              ||||               /||||/
+                               \||\             /||||/
+                               ||||             ||||||
+                               ||||            /|||||/
+                                \||\          /|||||/
+                                ||||         /|||||/
+                                ||||        /|||||/
+                                 \|||\     /|||||/
+                                  \|||\    |||||||
+                                  |||||   /|||||/
+                                   \|||\/||||||/
+                                        ||||||||
+           ____________________________||||||||_____________________
+          | . : , . :,,', : . . : , __/||||||||\__: , .,,'. , : . . |
+         |___________________________________________________________|
+          |=========================================================|
+          |=========================================================|
+          |  ___   ___   ___   ___   ___   ___   ___   ___   ___    |
+          | |  _| |  _| |  _| |  _| |  _| |  _| |  _| |  _| |  _|   |
+          | |_|   |_|   |_|   |_|   |_|   |_|   |_|   |_|   |_|     |
+          |_________________________________________________________|
+            (_o)                                               (o_)
+  ___________________________________________________________________________
+ |___________________________________________________________________________|
+ |   ___   ___   ___   ___   ___   ___   ___   ___   ___   ___   ___   ___   |
+ |__/   \_/   \_/   \_/   \_/   \_/   \_/   \_/   \_/   \_/   \_/   \_/   \__|
+ (_/_______________________________________________________________________\_)
+  ----------------------------------------------------------------------------
+```
+
+*A twin-trunk informal upright on a Teizan rectangle and its rosewood stand. In the
+console the trunk is yellow, the leaves green with a lit cap, the pot red clay with a
+gold key-fret band.* Every form and planter is shown in colour in
+[docs/gallery.html](docs/gallery.html).
+
+## Install
+
+Needs Python 3.8 or later. Nothing to install beyond the one file.
+
+```sh
+sudo install -m 755 xuuxij-bonsai /usr/local/bin/xuuxij-bonsai
+mkdir -p ~/.config && cp xuuxij-bonsai.conf ~/.config/xuuxij-bonsai.conf
+xuuxij-bonsai
+```
+
+Any key ends it. `xuuxij-bonsai --help` lists every setting; `--print-config` shows what a
+run would use; `--once` grows one tree and exits; any setting can be given as a flag
+(`--style kengai`, `--seed 7`).
+
+### As a screensaver in tmux
+
+Put these two lines in `~/.tmux.conf`; the lock starts after the idle time and ends on a
+key:
+
+```
+set -g lock-after-time 300
+set -g lock-command 'xuuxij-bonsai'
+```
+
+On a console login that goes straight into tmux (`exec tmux new-session -A -s main` in
+`~/.profile`), that is the whole screensaver.
+
+## Settings
+
+All in `~/.config/xuuxij-bonsai.conf`, one `key = value` per line, `#` for comments. The
+file is read again before every tree, so a change shows on the next tree without a
+restart. A flag on the command line wins over the file.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `style` | `auto` | the tree's form: auto (drawn by the weights in styles), or moyogi (informal upright), chokkan (formal upright), shakan (slanting), bunjin (literati), kengai (cascade) |
+| `styles` | `moyogi:15 chokkan:10 shakan:30 bunjin:30 kengai:15` | how often each form appears, as name:weight |
+| `cycle` | `10m` | every tree gets exactly this long, first cell to the next tree's first cell, by pacing (10m, 600s; 0 = no clock) |
+| `twin` | `auto` | a twin trunk: auto (a fifth of the uprights and slanting trees), yes or no |
+| `height` | `0.6` | the height budget: each form's height scales with it (0.6 = as designed) (0.1 to 1) |
+| `width` | `0.75` | the width budget: each form's spread scales with it (0.75 = as designed) (0.1 to 1) |
+| `leafiness` | `1` | size of the clouds of foliage (0.3 to 3) |
+| `leaves` | `auto` | characters inside a cloud of foliage: auto (drawn per tree: &* broadleaf or *^ needles), or your own |
+| `leaf_edge` | `.,'` | characters around a cloud's edge |
+| `step` | `0.1` | seconds per cell a branch grows sideways (bigger = slower) (0 to 10) |
+| `fronts` | `1` | strokes drawn at the same time (1 = a single pen) (1 to 8) |
+| `aspect` | `2` | how much longer a step up takes than a step sideways (1 to 3) |
+| `ease` | `1` | how much a branch slows toward its end (0 = steady) (0 to 2) |
+| `gap` | `8` | pause before a new stroke starts, in steps (0 to 20) |
+| `bud_delay` | `15` | steps before a bud (.) opens into a leaf (0 = no buds) (0 to 60) |
+| `highlight` | `yes` | a bright tip travels along each growing branch |
+| `wait` | `45` | seconds a finished tree stays before its leaves turn (0 to 3600) |
+| `autumn` | `70` | seconds the leaves take to change colour, top pad first (0 to 600) |
+| `autumn_colors` | `yellow red` | the colours the leaves turn, in order |
+| `fall` | `180` | seconds the leaves take to fall (10 to 3600) |
+| `bare` | `12` | seconds the bare tree is held before it crumbles (0 to 600) |
+| `crumble` | `20` | seconds the bare tree takes to crumble into the planter (0.5 to 600) |
+| `trunk_color` | `yellow` | colour of the trunk and branches |
+| `leaf_color` | `green` | colour of the leaves and moss |
+| `pot` | `auto` | the planter: auto (matched to the form), no, or one of drum celadon teizan hexagon oval bunjin |
+| `stand` | `auto` | a rosewood display stand under the planter: auto, yes or no |
+| `pot_color` | `auto` | the planter's body colour: auto (each design's own) or a colour |
+| `trim_color` | `auto` | the planter's trim colour: auto or a colour |
+| `stand_color` | `red` | the stand's colour (red = rosewood) |
+| `seed` | `none` | a number gives the same trees every time; none = random |
+
+## How it works
+
+**Planning.** A tree is planned in full before the first cell is drawn. A form is drawn
+by weight: the informal upright (moyogi), the formal upright (chokkan), the slanting
+tree (shakan), the literati (bunjin) and the cascade (kengai); a fifth of the informal
+uprights grow a twin trunk. The trunk is a Catmull-Rom spline through the form's control
+points, sampled once per row and never moving more than two columns a row, tapering from
+a wide base with surface roots. Main branches leave it in turn, shorter as they climb,
+each with a cloud of foliage (a flat-bottomed dome, light at the edge, lit along the top)
+and a twig or two inside it; a back pad behind the trunk gives depth; air is kept between
+families. The tree stands off-centre in its planter as bonsai display practice has it,
+and the whole composition is centred on the screen.
+
+**Drawing.** Strokes are drawn one after another, bottom up, one cell at a time with a
+bright moving tip; leaves open as buds. Every number in a range is drawn with the tree's
+own random generator, so no two trees repeat, and `seed = N` reproduces one.
+
+**Autumn.** After the hold the leaves turn, top pad first; then they let go a few a
+second with a gust now and then, and float down swaying, gliding, tumbling as they turn,
+carried by one slow breeze, to settle on the soil, a stand or the table. The bare tree
+is held, then crumbles from the branch tips inward and the trunk from the top down, its
+dust drifting into the planter. The next tree grows out of the same planter; nothing is
+swept, so the carpet piles up a little more with every autumn.
+
+**The clock.** With `cycle` set, every tree gets exactly that long from its first cell to
+the next tree's first cell: the growing takes a quarter of it at a step chosen for that
+tree, the leaves let go in a window computed to fit, and the bare tree stands until the
+crumble's moment. Nothing is cut short; only the tempo changes. The clock is anchored to
+the first tree's start, so a slow landing never drifts it.
+
+**Planters.** Six designs after real pots, drawn from the Omiya Bonsai Art Museum's
+collection and the classic Chinese and Japanese containers (see
+[docs/references.md](docs/references.md)): a studded drum, a celadon round pot with
+floral and lotus relief, a Teizan rectangle with a key-fret band and cloud feet, a tall
+hexagonal cascade pot, a glazed oval with a wave scroll, and a plain literati pot; and a
+rosewood display stand with an openwork apron and scroll feet, in a normal, tall and
+cascade height. The run's planter follows the first tree and is kept for the whole run.
+
+## Tools
+
+In `tools/`. Each runs the program's own planning and drawing against a recording screen
+on a virtual clock, so a ten-minute tree renders in a moment.
+
+- `render_review.py PROGRAM CONFIG OUTDIR [SEED ...] [key=value ...] [phases]` writes one
+  text file per seed: the tree at 20, 50, 80 and 100 % of its growth, a map of what each
+  cell is, and the numbers (form, control points, branches, pads, planter, timing); with
+  `phases`, frames of the autumn as well. This is how the design was reviewed.
+- `cycles.py SEED [key=value ...]` grows four trees in a row in one planter and shows
+  the carpet building up.
+- `timer_test.py SEED [key=value ...]` runs four timed cycles and reports each tree's
+  timing against the clock.
+- `gallery.py OUT.html` renders every form and planter in the console's colours and
+  builds the gallery page.
+
+To check the real thing, run it in a detached tmux of the console's size and capture the
+pane: `tmux -L t -f /dev/null new-session -d -x 135 -y 120 "xuuxij-bonsai --seed 1"`,
+then `tmux -L t capture-pane -p -t 0`. Set `XUUXIJ_BONSAI_LOG=/path/to/a/file` to have
+the program note each tree's start and how far off its mark it was.
+
+## Design
+
+The forms, the foliage, the planters, the autumn and the growth were designed and
+reviewed over several rounds by a design reviewer working from references on bonsai
+forms and containers, with the renders above as the check. The references are listed in
+[docs/references.md](docs/references.md).
+
+## Licence
+
+MIT; see [LICENSE](LICENSE).
