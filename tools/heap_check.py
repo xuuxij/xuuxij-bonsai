@@ -38,7 +38,7 @@ def faults(tree):
 
 def main():
     mod, cfg, rest = setup(sys.argv[1:])
-    mod_pile_rows.value = getattr(mod, "PILE_ROWS", 2)
+    mod_pile_rows.value = cfg.get("pile", 2)
     rng = random.Random(int(rest[0]) if rest else 1)
     trees = int(rest[1]) if len(rest) > 1 else 4
     clock, log = virtual_clock(mod)

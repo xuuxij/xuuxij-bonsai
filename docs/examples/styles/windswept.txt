@@ -1,0 +1,16 @@
+# A form of your own: start from a built-in form and change some of its numbers.
+# Put this file in ~/.config/xuuxij-bonsai/styles/; it then joins the draw with its
+# weight, or set style = windswept to grow only this one.
+#
+# A number can be fixed (0.45) or a range drawn per tree (0.5 to 0.7).
+
+base: shakan
+weight: 20
+height: 0.5 to 0.6        # of the rows above the soil
+spread: 0.6 to 0.7        # of the width budget
+lean: 0.55 to 0.75        # how far the trunk leans, as a share of its height
+bow: 2 to 4               # columns the trunk bows against the lean
+branches: 3 to 4
+first branch: 0.45        # of the tree's height
+leaves: *^                # needles
+planter: oval

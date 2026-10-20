@@ -1,0 +1,27 @@
+# A planter with its own paint: the same shape as the rows, one letter per cell.
+#   b body colour   B body, bold (a lit lip)    t trim colour   T trim, bold
+#   g gravel        m moss                      s shadow        space: nothing
+# Put it in ~/.config/xuuxij-bonsai/pots/ and set pot = carved-box.
+
+body: red
+trim: yellow
+
+rows:
+  _________________________________________
+ | . : , . : . , : . ,,' : . , . : . , . : |
+|___________________________________________|
+ |=========================================|
+ |  /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\   |
+ |_________________________________________|
+   (_o)                                 (o_)
+  ------------------------------------------
+
+paint:
+  BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+ b ggggggggggggggggggmmmgggggggggggggggggg b
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+ bBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBb
+ b  TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT   b
+ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+   bbbb                                 bbbb
+  ssssssssssssssssssssssssssssssssssssssssss

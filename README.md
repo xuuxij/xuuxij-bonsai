@@ -159,6 +159,7 @@ restart. A flag on the command line wins over the file.
 | `fall` | `180` | seconds the leaves take to fall (10 to 3600) |
 | `bare` | `12` | seconds the bare tree is held before it crumbles (0 to 600) |
 | `crumble` | `20` | seconds the bare tree takes to crumble into the planter (0.5 to 600) |
+| `pile` | `2` | rows the fallen leaves may heap up above the soil, a stand or the table (0 to 20) |
 | `trunk_color` | `yellow` | colour of the trunk and branches |
 | `leaf_color` | `green` | colour of the leaves and moss |
 | `pot` | `auto` | the planter: auto (matched to the form), no, or one of drum celadon teizan hexagon oval bunjin |
@@ -167,6 +168,13 @@ restart. A flag on the command line wins over the file.
 | `trim_color` | `auto` | the planter's trim colour: auto or a colour |
 | `stand_color` | `red` | the stand's colour (red = rosewood) |
 | `seed` | `none` | a number gives the same trees every time; none = random |
+
+## Your own planters and forms
+
+A planter is a drawing in a text file in `~/.config/xuuxij-bonsai/pots/`; a form is a
+short list of numbers over one of the built-in forms, in `~/.config/xuuxij-bonsai/styles/`.
+Both are picked by name in the settings. [docs/custom.md](docs/custom.md) has the rules
+and two worked examples, which are in [docs/examples/](docs/examples/) ready to copy.
 
 ## How it works
 

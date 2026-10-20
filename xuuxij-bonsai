@@ -34,12 +34,70 @@ import sys
 import time
 
 CONFIG_PATH = os.path.expanduser("~/.config/xuuxij-bonsai.conf")
+USER_DIR = os.path.expanduser("~/.config/xuuxij-bonsai")  # pots/ and styles/ of the user's own
 
 COLORS = {"black": 0, "red": 1, "green": 2, "yellow": 3,
           "blue": 4, "magenta": 5, "cyan": 6, "white": 7}
 
 STYLES = ("moyogi", "chokkan", "shakan", "bunjin", "kengai")
 LEAF_SETS = (("&*", 65), ("*^", 35))
+
+# ---- the forms, as numbers ---------------------------------------------------------------
+# Each built-in form is a set of numbers; a user's own form (a file in ~/.config/
+# xuuxij-bonsai/styles/) names a base form and changes some of them. A pair is a range
+# drawn per tree; a single number is fixed. The cascade is its own thing and takes no
+# changes beyond its weight.
+FORMS = {
+    "moyogi": {
+        "height": (0.55, 0.65),        # of the rows above the soil
+        "spread": (0.60, 0.80),        # of the width budget
+        "trunk_width": ("by_height", 8.0, 6, 9),  # rows / 8, kept between 6 and 9
+        "line": "s-curve",             # the trunk's line: s-curve, straight, lean or literati
+        "movement": (8, 14),           # columns the s-curve or literati trunk swings
+        "apex": (-6, 6),               # columns the apex ends from the base
+        "branches": (3, 5),
+        "first_branch": 0.40,          # of the tree's height
+        "first_side": "outside",       # outside the first curve, away from the lean, or either
+        "profile": "curve",            # curve (dip then rise), chokkan (level then rising), shakan (level)
+        "branch_length": "by_spread",  # or a pair of columns
+        "twigs": 1,                    # secondaries per branch, 0 or 1
+        "pads": "by_branch",           # or ((rx lo, rx hi), (ry lo, ry hi))
+        "apex_pad": 1.0,               # chance of a pad on the apex
+        "back_pad": True,
+        "planting": (0.43, "opposite_first_branch"),
+        "roots": ("__/", "\\__"),
+    },
+    "chokkan": {
+        "height": 0.60, "spread": (0.65, 0.75), "trunk_width": ("by_height", 7.5, 8, 9),
+        "line": "straight", "movement": 0, "apex": 0, "branches": (4, 6), "first_branch": 0.33,
+        "first_side": "either", "profile": "chokkan", "branch_length": "by_spread", "twigs": 1,
+        "pads": "by_branch", "apex_pad": 1.0, "back_pad": True, "planting": (0.48, "left"),
+        "roots": ("__/", "\\__"),
+    },
+    "shakan": {
+        "height": 0.55, "spread": (0.55, 0.65), "trunk_width": ("by_height", 9.0, 6, 7),
+        "line": "lean", "lean": (0.35, 0.55), "bow": (3, 6), "branches": (3, 4), "first_branch": 0.38,
+        "first_side": "away", "profile": "shakan", "branch_length": "by_spread", "twigs": 1,
+        "pads": "by_branch", "apex_pad": 1.0, "back_pad": True, "planting": (0.38, "away_from_lean"),
+        "roots": "lean",
+    },
+    "bunjin": {
+        "height": 0.75, "spread": (0.30, 0.40), "trunk_width": ("drawn", 3, 4),
+        "line": "literati", "movement": (12, 20), "apex": (-10, 16), "branches": (2, 3),
+        "first_branch": (0.62, 0.70), "first_side": "outside", "profile": "curve",
+        "branch_length": (8, 14), "twigs": 0, "pads": ((8, 12), (3, 4)), "apex_pad": 0.6,
+        "back_pad": False, "planting": ((0.35, 0.40), "opposite_apex"), "roots": ("_/", "\\_"),
+    },
+}
+USER_FORMS = {}  # name -> the resolved numbers, from the user's style files
+USER_POTS = {}   # name -> (rows, (body, trim)), from the user's planter files
+
+
+def rng_range(rng, value):
+    """A number as given, or one drawn from a pair."""
+    if isinstance(value, (tuple, list)):
+        return rng.uniform(value[0], value[1])
+    return value
 
 # key: (default, kind, lowest, highest, what it does)
 SETTINGS = {
@@ -70,6 +128,7 @@ SETTINGS = {
     "fall":        (180.0, float, 10.0, 3600.0, "seconds the leaves take to fall"),
     "bare":        (12.0, float, 0.0, 600.0, "seconds the bare tree is held before it crumbles"),
     "crumble":     (20.0, float, 0.5, 600.0, "seconds the bare tree takes to crumble into the planter"),
+    "pile":        (2, int, 0, 20, "rows the fallen leaves may heap up above the soil, a stand or the table"),
     "trunk_color": ("yellow", "color", None, None, "colour of the trunk and branches"),
     "leaf_color":  ("green", "color", None, None, "colour of the leaves and moss"),
     "pot":         ("auto", "pot", None, None, "the planter: auto (matched to the form), no, or one of "
@@ -88,7 +147,6 @@ DESIGN_ROWS = 60      # the tree height the proportions were designed at; smalle
 SMALLEST = (20, 30)   # rows, columns: below this no tree is drawn, only a word
 TICK = 0.08           # seconds per step of the falling leaves and the dust
 DEBRIS_HOLD = 9.0     # seconds the dust lies in the planter before the next tree
-PILE_ROWS = 2         # how far a heap of leaves may rise above its ground
 AVALANCHE = 3.0       # seconds allowed in a timed cycle for the heap to settle after the crumble
 
 
@@ -292,13 +350,187 @@ def has_shadow(rows):
     return all(p in "s " for p in rows[-1][1])
 
 
+def pot_rows_for(kind, W):
+    """A planter's rows at width W: a built-in design stretched to it, a user's own as
+    drawn."""
+    if kind in USER_POTS:
+        return list(USER_POTS[kind][0])
+    return POTS[kind][0](W)
+
+
+def pot_palette(kind):
+    return USER_POTS[kind][1] if kind in USER_POTS else POTS[kind][2]
+
+
 def block_height(kind, stand):
     """Rows the planter takes with its stand (the pot's shadow is dropped on a stand)."""
-    rows = POTS[kind][0](41)
+    rows = pot_rows_for(kind, 41)
     n = len(rows)
     if stand:
         n += len(stand_rows(41, stand)) - (1 if has_shadow(rows) else 0)
     return n
+
+
+# ---- the user's own planters and forms -------------------------------------------------
+
+def read_blocks(path):
+    """A user file: `key: value` lines, and `rows:` / `paint:` headings followed by
+    their lines kept as they are. Returns (values, blocks), with line numbers."""
+    values, blocks, current = {}, {}, None
+    with open(path, encoding="utf-8") as fh:
+        for number, raw in enumerate(fh.read().splitlines(), 1):
+            line = raw.rstrip("\n")
+            if current is None and (not line.strip() or line.lstrip().startswith("#")):
+                continue
+            if line.strip().lower() in ("rows:", "paint:"):
+                current = line.strip().lower()[:-1]
+                blocks[current] = []
+                continue
+            if current is not None:
+                if ":" in line and not line.startswith(" ") and line.split(":", 1)[0].strip().isalpha() \
+                        and line.split(":", 1)[0].strip().lower() not in ("rows", "paint"):
+                    current = None  # a key again: the block ended
+                else:
+                    blocks[current].append(line)
+                    continue
+            if ":" not in line:
+                raise ValueError(f"{path} line {number}: expected key: value")
+            key, value = line.split(":", 1)
+            value = re.split(r"\s+#", value, maxsplit=1)[0]  # a comment after the value
+            values[key.strip().lower()] = (value.strip(), number)
+    for name in blocks:
+        while blocks[name] and not blocks[name][-1].strip():
+            blocks[name].pop()
+    return values, blocks
+
+
+def load_user_pot(path):
+    """A planter drawn in a file: its rows (row 1 the far rim, row 2 the soil the trunk
+    stands on), optionally a paint block of the same shape, body and trim colours."""
+    values, blocks = read_blocks(path)
+    rows = blocks.get("rows")
+    if not rows or len(rows) < 2:
+        raise ValueError(f"{path}: needs a rows: block of at least two lines (the far rim, then the soil)")
+    width = max(len(r) for r in rows)
+    if width < 9:
+        raise ValueError(f"{path}: the planter must be at least 9 columns wide")
+    rows = [r.ljust(width) for r in rows]
+    paint = blocks.get("paint")
+    if paint is not None:
+        paint = [p.ljust(width) for p in paint]
+        if len(paint) != len(rows) or any(len(p) > width for p in paint):
+            raise ValueError(f"{path}: the paint: block must have the same shape as rows:")
+        bad = {c for p in paint for c in p if c not in "bBtTgms "}
+        if bad:
+            raise ValueError(f"{path}: paint letters must be b B t T g m s or space, not {''.join(sorted(bad))!r}")
+    else:
+        paint = []
+        for i, r in enumerate(rows):
+            if i == 1:  # the soil row: gravel and moss in the pot's own colours
+                paint.append("".join(" " if c == " " else "g" if c in ".:" else "m" if c in ",'" else "b" for c in r))
+            elif i == len(rows) - 1 and set(r.strip()) == {"-"}:
+                paint.append("".join(" " if c == " " else "s" for c in r))
+            else:
+                paint.append("".join(" " if c == " " else "b" for c in r))
+    for name in ("body", "trim"):
+        if name in values and values[name][0].lower() not in COLORS:
+            raise ValueError(f"{path} line {values[name][1]}: {name} must be one of {', '.join(COLORS)}")
+    body = values.get("body", ("white", 0))[0].lower()
+    trim = values.get("trim", (body, 0))[0].lower()
+    return list(zip(rows, paint)), (body, trim)
+
+
+def parse_number(text, name, path, number):
+    try:
+        if "to" in text:
+            a, b = (float(p) for p in text.split("to", 1))
+            return (a, b)
+        if text.count("-") == 1 and not text.startswith("-"):
+            a, b = (float(p) for p in text.split("-", 1))
+            return (a, b)
+        return float(text)
+    except ValueError:
+        raise ValueError(f"{path} line {number}: {name} must be a number or a range like 0.5 to 0.7, not {text!r}") from None
+
+
+def load_user_form(path):
+    """A form written over a base form: `base: moyogi` and the numbers to change."""
+    values, _blocks = read_blocks(path)
+    base = values.get("base", ("moyogi", 0))[0].lower()
+    if base not in FORMS:
+        raise ValueError(f"{path}: base must be one of {', '.join(FORMS)}, not {base!r}")
+    spec = dict(FORMS[base])
+    spec["weight"] = 10
+    for key, (text, number) in values.items():
+        key = key.replace(" ", "_")
+        if key in ("base", "name"):
+            continue
+        if key in ("height", "spread", "movement", "apex", "lean", "bow", "first_branch", "apex_pad", "planting", "weight"):
+            value = parse_number(text, key, path, number)
+            if key == "planting":
+                rule = spec["planting"][1]
+                spec[key] = (value, rule)
+            elif key in ("weight",):
+                spec[key] = int(value)
+            else:
+                spec[key] = value
+        elif key == "branches":
+            value = parse_number(text, key, path, number)
+            spec[key] = (int(value[0]), int(value[1])) if isinstance(value, tuple) else (int(value), int(value))
+        elif key == "trunk_width":
+            value = parse_number(text, key, path, number)
+            lo, hi = (int(value[0]), int(value[1])) if isinstance(value, tuple) else (int(value), int(value))
+            spec[key] = ("drawn", lo, hi)
+        elif key == "branch_length":
+            value = parse_number(text, key, path, number)
+            spec[key] = (int(value[0]), int(value[1])) if isinstance(value, tuple) else (int(value), int(value))
+        elif key == "twigs":
+            spec[key] = 1 if text.lower() in ("1", "yes", "true") else 0
+        elif key == "back_pad":
+            spec[key] = text.lower() in ("yes", "true", "1")
+        elif key == "first_side":
+            if text.lower() not in ("outside", "away", "either"):
+                raise ValueError(f"{path} line {number}: first side must be outside, away or either")
+            spec[key] = text.lower()
+        elif key == "profile":
+            if text.lower() not in ("curve", "chokkan", "shakan"):
+                raise ValueError(f"{path} line {number}: profile must be curve, chokkan or shakan")
+            spec[key] = text.lower()
+        elif key == "leaves":
+            spec[key] = text
+        elif key == "planter":
+            name = text.lower()
+            if name != "wide" and name not in POTS and name not in USER_POTS:
+                raise ValueError(f"{path} line {number}: planter must be wide or a planter's name")
+            spec[key] = name
+        else:
+            raise ValueError(f"{path} line {number}: unknown setting {key!r} for a form")
+    return spec
+
+
+def load_user_files():
+    """Reads the user's planters and forms once; a bad file is reported and skipped."""
+    USER_POTS.clear()
+    USER_FORMS.clear()
+    for kind, folder, loader, store in (("planter", "pots", load_user_pot, USER_POTS),
+                                        ("form", "styles", load_user_form, USER_FORMS)):
+        path = os.path.join(USER_DIR, folder)
+        if not os.path.isdir(path):
+            continue
+        for entry in sorted(os.listdir(path)):
+            if not entry.endswith(".txt"):
+                continue
+            name = entry[:-4].lower()
+            if name in POTS or name in FORMS or name == "kengai" or name in ("auto", "no", "wide"):
+                print(f"xuuxij-bonsai: {kind} {name!r} ({entry}) has a built-in name; skipped", file=sys.stderr)
+                continue
+            try:
+                store[name] = loader(os.path.join(path, entry))
+            except (ValueError, OSError) as exc:
+                print(f"xuuxij-bonsai: {kind} file skipped: {exc}", file=sys.stderr)
+
+
+load_user_files()
 
 
 def convert(key, raw):
@@ -329,16 +561,16 @@ def convert(key, raw):
         return " ".join(names)
     if kind == "style":
         name = text.lower()
-        if name == "auto" or name in STYLES:
+        if name == "auto" or name in STYLES or name in USER_FORMS:
             return name
-        raise ValueError(f"style must be auto or one of {', '.join(STYLES)}, not {text!r}")
+        raise ValueError(f"style must be auto or one of {', '.join(STYLES + tuple(USER_FORMS))}, not {text!r}")
     if kind == "weights":
         weights = {}
         for item in text.lower().split():
             name, _sep, number = item.partition(":")
-            if name not in STYLES or not number.isdigit():
+            if (name not in STYLES and name not in USER_FORMS) or not number.isdigit():
                 raise ValueError(f"{key} must be name:weight pairs with names from "
-                                 f"{', '.join(STYLES)}, not {item!r}")
+                                 f"{', '.join(STYLES + tuple(USER_FORMS))}, not {item!r}")
             weights[name] = int(number)
         if not any(weights.values()):
             raise ValueError(f"{key} needs at least one weight above 0")
@@ -372,9 +604,9 @@ def convert(key, raw):
             return "auto"
         if name in ("no", "false", "off", "0", "none"):
             return "no"
-        if name in POTS:
+        if name in POTS or name in USER_POTS:
             return name
-        raise ValueError(f"pot must be auto, no or one of {', '.join(POTS)}, not {text!r}")
+        raise ValueError(f"pot must be auto, no or one of {', '.join(list(POTS) + list(USER_POTS))}, not {text!r}")
     if kind == "stand":
         name = text.lower()
         if name == "auto":
@@ -577,9 +809,15 @@ class Tree:
         self.grid = inherit["grid"] if inherit else {}
         # The form, the twin, the leaf set, the planter: drawn once per tree.
         self.style = cfg["style"] if cfg["style"] != "auto" else self.draw_style()
+        self.spec = USER_FORMS.get(self.style) or FORMS.get(self.style)
         self.twin = self.style == "moyogi" and (cfg["twin"] == "yes"
                                                 or (cfg["twin"] == "auto" and rng.random() < 0.2))
-        self.leaf_set = cfg["leaves"] if cfg["leaves"] != "auto" else self.draw_leaves()
+        if cfg["leaves"] != "auto":
+            self.leaf_set = cfg["leaves"]
+        elif self.spec and "leaves" in self.spec:
+            self.leaf_set = self.spec["leaves"]
+        else:
+            self.leaf_set = self.draw_leaves()
         if self.planter:
             self.pot_kind, self.stand_kind = self.planter[0], self.planter[1]
         else:
@@ -638,12 +876,14 @@ class Tree:
             weights[name] = int(number)
         if self.cfg["stand"] == "no" or self.cfg["pot"] == "no" or self.H < 100:
             weights["kengai"] = 0  # a cascade needs its tall stand, and the height to hang beside it
+        for name, spec in USER_FORMS.items():  # the user's forms join the draw by their weight
+            weights.setdefault(name, spec.get("weight", 10))
         if self.planter:  # the forms that suit the planter already standing there
             if self.planter[1] == "cascade":
                 weights = {"kengai": weights.get("kengai", 10) or 10, "bunjin": weights.get("bunjin", 0)}
             else:
                 weights["kengai"] = 0
-        names = [n for n in STYLES if weights.get(n, 0) > 0] or ["moyogi"]
+        names = [n for n in list(STYLES) + list(USER_FORMS) if weights.get(n, 0) > 0] or ["moyogi"]
         return self.rng.choices(names, [weights.get(n, 1) for n in names])[0]
 
     def draw_leaves(self):
@@ -655,6 +895,7 @@ class Tree:
         cfg, rng = self.cfg, self.rng
         if cfg["pot"] == "no":
             return "no", None
+        wanted = self.spec.get("planter", "wide") if self.spec else "wide"
         if cfg["pot"] != "auto":
             kind = cfg["pot"]
             stand = "tall" if kind == "bunjin" else None
@@ -666,6 +907,9 @@ class Tree:
         # The narrow pots come only when named in the settings; the cascade's is its own.
         elif self.style == "kengai":
             kind, stand = "hexagon", "cascade"
+        elif wanted != "wide":  # a user's form asked for a planter by name
+            kind = wanted
+            stand = "tall" if kind == "bunjin" else ("stand" if rng.random() < 0.5 else None)
         else:
             kind = rng.choice(("teizan", "oval"))
             stand = "stand" if rng.random() < 0.5 else None
@@ -675,14 +919,20 @@ class Tree:
             stand = "tall" if kind == "bunjin" else "stand"
         return kind, stand
 
+    def draw_for_forms(self, key, draw):
+        """One draw per built-in form, in a fixed order, then the user's own form's if
+        this is one: so a seed gives the same tree whichever form it lands on, and the
+        built-in trees never change under a new form."""
+        draws = {name: draw(FORMS[name][key]) for name in ("moyogi", "chokkan", "shakan", "bunjin")}
+        if self.style in draws:
+            return draws[self.style]
+        return draw(self.spec[key])
+
     @property
     def s_share(self):
         """The form's spread share, drawn once (kept on the instance)."""
         if not hasattr(self, "_s_share"):
-            rng = self.rng
-            self._s_share = {"moyogi": rng.uniform(0.60, 0.80), "chokkan": rng.uniform(0.65, 0.75),
-                             "shakan": rng.uniform(0.55, 0.65), "bunjin": rng.uniform(0.30, 0.40),
-                             "kengai": 0.0}[self.style]
+            self._s_share = self.draw_for_forms("spread", lambda v: rng_range(self.rng, v)) if self.spec else 0.0
         return self._s_share
 
     # ---- planning ------------------------------------------------------------------------
@@ -697,7 +947,8 @@ class Tree:
         if self.style == "kengai":
             self.plan_kengai(shrink)
             return
-        r_share = {"moyogi": rng.uniform(0.55, 0.65), "chokkan": 0.60, "shakan": 0.55, "bunjin": 0.75}[self.style]
+        spec = self.spec
+        r_share = self.draw_for_forms("height", lambda v: rng_range(rng, v))
         R = int(round(r_share * B * cfg["height"] / 0.6))
         R = max(10, min(R, B - self.air))
         # The spread follows the width budget, but never outgrows the tree's own height:
@@ -706,43 +957,44 @@ class Tree:
         S = max(16, min(S, int(1.5 * R)))
         self.R, self.S = R, S
         self.scale = min(1.0, R / DESIGN_ROWS)  # every proportion below shrinks with a small tree
-        if self.style == "bunjin":
-            w0 = rng.randint(3, 4) if R >= 30 else rng.randint(2, 3)
+        tw = spec["trunk_width"]
+        if tw[0] == "drawn":
+            w0 = rng.randint(tw[1], tw[2]) if R >= 30 else rng.randint(2, 3)
         else:
-            w0 = {"moyogi": max(6, min(9, round(R / 8))), "chokkan": max(8, min(9, round(R / 7.5))),
-                  "shakan": max(6, min(7, round(R / 9)))}[self.style]
+            w0 = max(tw[2], min(tw[3], round(R / tw[1])))
             w0 = max(3, int(round(w0 * self.scale)))
         self.w0 = w0
         s = rng.choice((-1, 1))  # the side of the trunk's first movement, or of the lean
         self.first_side = s
         # The trunk's line.
-        if self.style == "moyogi":
-            A = rng.uniform(8, 14)
-            apex = rng.uniform(-6, 6)
+        line = spec["line"]
+        if line == "s-curve":
+            A = rng_range(rng, spec["movement"])
+            apex = rng_range(rng, spec["apex"])
             points = [(0, 0), (0.35 * R, s * A), (0.65 * R, -0.55 * s * A), (0.88 * R, 0.25 * s * A), (R, apex)]
-        elif self.style == "chokkan":
+        elif line == "straight":
             points = [(0, 0), (R, 0)]
-        elif self.style == "shakan":
-            lean = rng.uniform(0.35, 0.55) * R * s
-            bow = rng.uniform(3, 6)
+        elif line == "lean":
+            lean = rng_range(rng, spec["lean"]) * R * s
+            bow = rng_range(rng, spec["bow"])
             points = [(0, 0), (0.25 * R, lean * 0.25 - s * bow * 0.7), (0.5 * R, lean * 0.5 - s * bow),
                       (0.75 * R, lean * 0.75 - s * bow * 0.7), (R, lean)]
-        else:
-            A = rng.uniform(12, 20)
-            lean = s * rng.uniform(-10, 16)
+        else:  # literati
+            A = rng_range(rng, spec["movement"])
+            lean = s * rng_range(rng, spec["apex"])
             points = [(0, 0), (0.3 * R, s * A), (0.55 * R, -0.7 * s * A), (0.78 * R, 0.5 * s * A),
                       (0.92 * R, -0.3 * s * A), (R, lean)]
         points = [(int(round(r)), x) for r, x in points]
         path = gentle_path(points, 0, R)  # height above the soil -> x offset
-        if self.style == "chokkan" and rng.random() < 0.5:
+        if line == "straight" and rng.random() < 0.5:
             h = rng.randint(R // 4, 3 * R // 4)
             path[h] += rng.choice((-1, 1))  # at most one wobble
         self.trunk_path = {B - h: self.cx + x for h, x in path.items()}
         self.report.update({"R": R, "S": S, "w0": w0, "control points": [(h, round(x, 1)) for h, x in points],
                             "apex offset": path[R] - path[0]})
-        nebari = {"moyogi": ("__/", "\\__"), "chokkan": ("__/", "\\__"),
-                  "shakan": (("___/", "\\_") if s > 0 else ("_/", "\\___")),
-                  "bunjin": ("_/", "\\_")}[self.style]
+        nebari = spec["roots"]
+        if nebari == "lean":  # three roots on the outer side of the lean, one inside
+            nebari = ("___/", "\\_") if s > 0 else ("_/", "\\___")
         trunk = self.make_trunk("trunk", [(B - h, self.cx + path[h]) for h in range(R + 1)], w0, nebari)
         twin = self.plan_twin(trunk, R, S, w0, s) if self.twin else None
         groups = self.plan_primaries(trunk, R, S, s)
@@ -796,12 +1048,12 @@ class Tree:
 
     def plan_primaries(self, trunk, R, S, s):
         cfg, rng, B = self.cfg, self.rng, self.base
-        style = self.style
-        n = {"moyogi": rng.randint(3, 5), "chokkan": rng.randint(4, 6),
-             "shakan": rng.randint(3, 4), "bunjin": rng.randint(2, 3)}[style]
-        f1 = {"moyogi": 0.40, "chokkan": 0.33, "shakan": 0.38, "bunjin": rng.uniform(0.62, 0.70)}[style]
+        spec = self.spec
+        n = self.draw_for_forms("branches", lambda v: rng.randint(*v))
+        f1 = self.draw_for_forms("first_branch", lambda v: rng_range(rng, v))
         heights = self.primary_heights(n, f1)
-        first = {"moyogi": s, "bunjin": s, "shakan": -s, "chokkan": rng.choice((-1, 1))}[style]
+        either = rng.choice((-1, 1))  # drawn for every form, used when the first side is free
+        first = {"outside": s, "away": -s}.get(spec["first_side"]) or either
         L0 = S / 2 - 4
         groups, listing = [], []
         side = first
@@ -815,12 +1067,13 @@ class Tree:
             x0, w = self.trunk_rows[y]
             start_x = x0 + w if side > 0 else x0 - 1
             least = max(4, int(round(10 * self.scale)))
-            length = (max(4, int(round(rng.randint(8, 14) * self.scale))) if style == "bunjin"
-                      else max(least, int(round(L0 * (1 - 0.17 * k)))))
-            profile = {"moyogi": "curve", "bunjin": "curve", "chokkan": "chokkan", "shakan": "shakan"}[style]
-            p = self.plan_branch("primary", y, start_x, side, length, profile)
+            if spec["branch_length"] == "by_spread":
+                length = max(least, int(round(L0 * (1 - 0.17 * k))))
+            else:
+                length = max(4, int(round(rng.randint(*spec["branch_length"]) * self.scale)))
+            p = self.plan_branch("primary", y, start_x, side, length, spec["profile"])
             if p is not None:
-                secs = [] if style == "bunjin" else self.plan_secondaries(p, side)
+                secs = self.plan_secondaries(p, side) if spec["twigs"] else []
                 groups.append((p, secs, k))
                 listing.append((round(h, 2), len(p.cells)))
             side = -side
@@ -952,7 +1205,7 @@ class Tree:
     def plan_back_pad(self, trunk, R, groups):
         """One pad behind the trunk at mid height, drawn never over wood, so the trunk
         and the branches show in front of it."""
-        if self.style not in ("moyogi", "chokkan", "shakan") or not groups:
+        if not self.spec["back_pad"] or not groups:
             return None
         rng, B = self.rng, self.base
         cy = B - int(round(rng.uniform(0.50, 0.56) * R))
@@ -966,9 +1219,10 @@ class Tree:
     def pad_radii(self, p):
         """The radii of a branch's pad: about 2:1 in square units, overhanging the tip."""
         lf = self.cfg["leafiness"] * self.scale
-        if self.style == "bunjin":
-            rx = max(3, int(round(self.rng.randint(8, 12) * lf)))
-            ry = max(2, int(round(self.rng.randint(3, 4) * lf)))
+        pads = self.spec["pads"] if self.spec else "by_branch"
+        if pads != "by_branch" and p.kind != "fallb":
+            rx = max(3, int(round(self.rng.randint(*pads[0]) * lf)))
+            ry = max(2, int(round(self.rng.randint(*pads[1]) * lf)))
         elif p.kind == "fallb":
             rx = max(3, int(round(self.rng.randint(7, 11) * lf)))
             ry = max(2, int(round(self.rng.randint(3, 4) * lf)))
@@ -1013,7 +1267,8 @@ class Tree:
         # Apex pads: the main one at 0.90 R (the trunk ends two rows inside it); the
         # literati's is optional; the twin gets a small one.
         apexes = []
-        if self.style != "bunjin" or rng.random() < 0.6:
+        chance = self.spec["apex_pad"]
+        if chance >= 1.0 or rng.random() < chance:
             apexes.append(self.apex_pad(trunk, self.trunk_path, B - R, 0.90, (10, 14), (4, 5)))
         if twin is not None:
             apexes.append(self.apex_pad(twin, self.twin_path, min(self.twin_path), 0.90, (8, 10), (4, 4)))
@@ -1035,8 +1290,7 @@ class Tree:
                 f.append(c)
                 self.clouds += 1
         # The crown: an apex pad touching the top family's pad joins it.
-        main_apex = apexes[0] if apexes and apexes[0] is not None and self.style != "bunjin" or (
-            apexes and apexes[0] is not None and apexes[0][0] is trunk) else None
+        main_apex = apexes[0] if apexes and apexes[0] is not None and apexes[0][0] is trunk else None
         if main_apex is not None and families:
             top = max(range(len(families)), key=lambda i: -groups[i][0].cells[0][0] if groups[i][2] < 10 else -10 ** 6)
             if groups[top][2] < 10 and self.near(main_apex[5], families[top][0][5]):
@@ -1252,14 +1506,12 @@ class Tree:
         s = self.first_side
         if self.style == "kengai":
             frac, from_left = 0.35, s < 0  # 35 % from the fall side's edge
-        elif self.style == "shakan":
-            frac, from_left = 0.38, s > 0  # from the edge away from the lean
-        elif self.style == "chokkan":
-            frac, from_left = 0.48, True
-        elif self.style == "bunjin":
-            frac, from_left = 0.35 + 0.05 * ((self.report.get("R", 7) % 7) / 6), self.report.get("apex offset", 0) >= 0
         else:
-            frac, from_left = 0.43, s > 0  # from the edge opposite the first branch
+            frac, rule = self.spec["planting"]
+            if isinstance(frac, (tuple, list)):  # a range: spread over the trees by their height
+                frac = frac[0] + (frac[1] - frac[0]) * ((self.report.get("R", 7) % 7) / 6)
+            from_left = {"left": True, "away_from_lean": s > 0, "opposite_first_branch": s > 0,
+                         "opposite_apex": self.report.get("apex offset", 0) >= 0}[rule]
         if self.twin and self.style != "kengai":
             frac, from_left = 0.45, self.twin_side > 0  # from the side away from the twin
         offset = frac * width if from_left else (1 - frac) * width
@@ -1275,19 +1527,21 @@ class Tree:
         off-centre as the form asks; draws nothing yet."""
         if self.pot_kind == "no":
             return
-        fn, share, _palette = POTS[self.pot_kind]
         least = LEAST_POT.get(self.pot_kind, 25)
         room = self.W - 2 * self.margin
         if self.planter:  # the planter already standing there
             _k, _s, width, x0, stand_w, sx0 = self.planter
+        elif self.pot_kind in USER_POTS:  # a user's planter is as wide as drawn
+            width = len(USER_POTS[self.pot_kind][0][0][0])
         elif self.style == "kengai":
             width = max(least, min(room, int(1.2 * self.crown_spread))) | 1
         else:
+            share = POTS[self.pot_kind][1]
             width = int(share * self.spread())
             if self.cfg["pot"] == "auto":  # the run's planter: really wide, whatever grows first
                 width = max(width, int(0.6 * self.W))
             width = max(least, min(room, width)) | 1
-        rows = fn(width)
+        rows = pot_rows_for(self.pot_kind, width)
         if self.stand_kind and has_shadow(rows):
             rows = rows[:-1]
         if self.stand_kind and not self.planter:
@@ -1359,7 +1613,7 @@ class Tree:
         cfg, color = self.cfg, self.attrs["color"]
         if not self.pot_rows:
             return
-        body_name, trim_name = POTS[self.pot_kind][2]
+        body_name, trim_name = pot_palette(self.pot_kind)
         body = color[cfg["pot_color"] if cfg["pot_color"] != "auto" else body_name]
         trim = color[cfg["trim_color"] if cfg["trim_color"] != "auto" else trim_name]
         stand = self.attrs["stand"]
@@ -1612,7 +1866,7 @@ class Tree:
         if spot is None:
             return False
         y, x = spot
-        if y < self.surface(x) - PILE_ROWS:
+        if y < self.surface(x) - self.cfg["pile"]:
             return False  # the pile is as high as it gets
         entry = self.grid.get((y, x))
         self.grid[(y, x)] = (kind, char, attr, entry)

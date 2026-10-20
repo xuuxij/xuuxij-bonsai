@@ -1,0 +1,18 @@
+# A planter drawn by hand. Put this file in ~/.config/xuuxij-bonsai/pots/ and set
+# pot = celadon-oval (the file's name without .txt) in your settings.
+#
+# Row 1 is the far rim, seen behind the trunk. Row 2 is the soil: the trunk stands on
+# it, and on that row . and : are drawn as gravel (white), , and ' as moss (green).
+# A last row of dashes is the shadow on the table. Everything else is the body colour.
+
+body: cyan
+trim: yellow
+
+rows:
+      ___.-------------------------------.___
+    .' . : , . : . , : . ,,' : . , . : . , . `.
+   (===========================================)
+    \   o   o   o   o   o   o   o   o   o   o /
+     \_______________________________________/
+        (__)                           (__)
+      -------------------------------------
