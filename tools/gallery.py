@@ -34,6 +34,21 @@ PLANTERS = [
     ("Literati pot on the tall stand", "pot = bunjin", "Shallow, plain, a wavy rim; the tall stand is the ornament.", {"pot": "bunjin"}),
     ("Hexagon on the cascade stand", "style = kengai (its own planter)", "Blue glaze, gold diamond lattice, dark facets; as tall as it is wide; the cascade's own.", {"pot": "hexagon", "style": "kengai"}),
 ]
+# The sky's clouds: (title, where it lives, note, pieces); a piece is (kind, size or seed, variant).
+SKY = [
+    ("Cumulus", "rows 10 to 46 %, 0.3 to 0.5 columns a second", "Small, medium and large, each with the second shape it breathes into every half minute: an ink outline, a lit top, an empty interior, a dark base. The nearest cloud, so the brightest; the large one always enters by the upwind edge.",
+     [("cumulus", 0, 0), ("cumulus", 0, 1), ("cumulus", 1, 0), ("cumulus", 1, 1), ("cumulus", 2, 0), ("cumulus", 2, 1)]),
+    ("Cirrus", "rows 2 to 16 %, 0.08 columns a second", "Small, medium and large, drawn for a wind blowing left: the hooked head leads and the strands trail behind it and droop, each lower one set further back. No bold white anywhere: the farthest cloud is the faintest. Mirrored for a wind blowing right.",
+     [("cirrus", 0, 0), ("cirrus", 1, 0), ("cirrus", 2, 0)]),
+    ("Mackerel sky", "rows 6 to 22 %, 0.12 columns a second", "Altocumulus: a brick lattice of small arcs, the top row lit, the outer rows shorter, one arc in five left out; a different field each time. A high sky's cloud.",
+     [("mackerel", 1, 0), ("mackerel", 4, 0)]),
+    ("Lenticular", "rows 14 to 26 %, still", "A standing lens that forms where it is and dissolves from its edges; one tree in twelve.",
+     [("lenticular", 0, 0)]),
+    ("Stratocumulus roll", "rows 30 to 48 %, 0.45 columns a second", "A long low roll of soft humps on one base, entering by the upwind edge; one cumulus in five is a roll, at most one per tree and one in the sky.",
+     [("roll", 2, 0), ("roll", 5, 0)]),
+    ("Spear mist (suyari-gasumi)", "rows 52 to 78 %, still", "The one stylised piece, from Japanese painting: short separate bands of dark ~ on adjacent rows, overlapping a third, the ends tapered to a dot, a rare ' of grey; forms behind the trunk and dissolves.",
+     [("mist", 3, 0), ("mist", 8, 0)]),
+]
 
 
 def span(mod, chars, attr):
@@ -79,6 +94,49 @@ def render(mod, base_cfg, seed, over):
     return "\n".join(out), tree.report
 
 
+def sky_shape(mod, kind, n, variant):
+    """One cloud's text rows and paint rows: `n` is the size for the drawn shapes, the
+    seed for the generated ones."""
+    rng = random.Random(n)
+    if kind == "cumulus":
+        text = mod.CLOUD_SHAPES["cumulus"][n][1 + variant]
+        return text, mod.paint_for(text, mod._heap)
+    if kind == "cirrus":
+        text = mod.CLOUD_SHAPES["cirrus"][n][1]
+        return text, mod.paint_for(text, mod._cirrus)
+    if kind == "lenticular":
+        text = mod.CLOUD_SHAPES["lenticular"]
+        return text, mod.paint_for(text, mod._heap)
+    if kind == "mackerel":
+        return mod.mackerel_field(rng)
+    if kind == "roll":
+        return mod.stratocumulus_roll(rng)
+    return mod.mist_band(rng, 70)
+
+
+def render_sky(mod, pieces):
+    """The pieces one under another in the sky's three greys."""
+    white, black = 10 + list(mod.COLORS).index("white"), 10 + list(mod.COLORS).index("black")
+    tones = {"W": white | BOLD, "g": white, "d": black | BOLD}
+    out = []
+    for kind, n, variant in pieces:
+        text, paint = sky_shape(mod, kind, n, variant)
+        for row, prow in zip(text, paint):
+            line, run, run_attr = [], [], None
+            for ch, pt in zip(row, prow):
+                attr = tones.get(pt, 0)
+                if attr != run_attr and run:
+                    line.append(span(mod, run, run_attr))
+                    run = []
+                run_attr = attr
+                run.append(ch)
+            if run:
+                line.append(span(mod, run, run_attr))
+            out.append("  " + "".join(line).rstrip())
+        out.append("")
+    return "\n".join(out).rstrip("\n")
+
+
 def card(title, setting, note, body, facts):
     note_html = f'<p class="note">{html.escape(note)}</p>' if note else ""
     return (f'<article class="card"><header><h3>{html.escape(title)}</h3>'
@@ -122,16 +180,20 @@ def main():
         body, report = render(mod, cfg, 3, dict({"style": "moyogi", "twin": "no"}, **over))
         planters.append(card(title, setting, note, body, report.get("planter", "")))
         print("rendered", title)
+    sky = [card(title, "sky = yes", note, render_sky(mod, pieces), where) for title, where, note, pieces in SKY]
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bonsai Forms and Planters</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=IBM+Plex+Mono:wght@400;700&family=Source+Sans+3:wght@400;600&display=swap">
 <style>{STYLE}</style></head><body><main>
 <h1>Bonsai Forms and Planters</h1>
-<p class="lede">Every form and every planter the screensaver can draw, rendered off-screen at the console's size (135 columns by 120 rows) in the colours the console shows. Each form is shown with the planter it drew; each planter is shown under the same informal upright.</p>
-<p class="key"><span style="color:#ffff55">trunk and branches</span><span style="color:#55ff55">leaves, lit</span><span style="color:#00aa00">leaves, shaded</span><span style="color:#aaaaaa">gravel</span><span style="color:#555555">shadow</span></p>
+<p class="lede">Every form, every planter and every cloud the screensaver can draw, rendered off-screen at the console's size (135 columns by 120 rows) in the colours the console shows. Each form is shown with the planter it drew; each planter is shown under the same informal upright; each cloud at full strength.</p>
+<p class="key"><span style="color:#ffff55">trunk and branches</span><span style="color:#55ff55">leaves, lit</span><span style="color:#00aa00">leaves, shaded</span><span style="color:#aaaaaa">gravel, cloud bodies</span><span style="color:#ffffff">cloud tops</span><span style="color:#555555">shadow, cloud bases and far clouds</span></p>
 <h2>Forms</h2><section class="grid">{"".join(forms)}</section>
 <h2>Planters</h2><section class="grid">{"".join(planters)}</section>
+<h2>Sky</h2>
+<p class="note">Clouds drift behind the tree, drawn only where nothing else is, in three greys on the black: real cloud kinds at their real heights (rows as a share of the screen, from the top), one wind for the whole run, a mood per tree (clear, fair, high or misty). Each enters by the upwind edge or forms in place and dissolves, tail first.</p>
+<section class="grid">{"".join(sky)}</section>
 </main></body></html>
 """
     with open(out, "w", encoding="utf-8") as fh:

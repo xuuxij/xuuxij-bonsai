@@ -168,6 +168,7 @@ restart. A flag on the command line wins over the file.
 | `pot_color` | `auto` | the planter's body colour: auto (each design's own) or a colour |
 | `trim_color` | `auto` | the planter's trim colour: auto or a colour |
 | `stand_color` | `red` | the stand's colour (red = rosewood) |
+| `sky` | `yes` | clouds drifting behind the tree (no = a black sky) |
 | `seed` | `none` | a number gives the same trees every time; none = random |
 
 ## Your own planters and forms
@@ -222,6 +223,17 @@ hexagonal cascade pot, a glazed oval with a wave scroll, and a plain literati po
 rosewood display stand with an openwork apron and scroll feet, in a normal, tall and
 cascade height. The run's planter follows the first tree and is kept for the whole run.
 
+**The sky.** Clouds drift behind the tree, drawn only where nothing else is, in the
+sumi-e manner: an ink outline with a lit top and an empty interior, in three greys on
+the black (nearer is brighter). They are real cloud kinds at their real heights: cirrus
+high and slow, its hooked head leading and its strands trailing; cumulus lower and
+faster, breathing as one hump grows and settles; a mackerel sky (altocumulus) now and
+then, a lens-shaped lenticular standing still, a long stratocumulus roll; and the one
+stylised piece, the spear mist (suyari-gasumi) of Japanese painting forming behind the
+trunk. Each tree's sky has a mood (clear, fair, high or misty), there is one wind for the
+whole run, which the leaf-fall's gusts mostly follow, and a cloud enters by the upwind
+edge or forms in place and dissolves, tail first. `sky = no` leaves the sky black.
+
 ## Tools
 
 In `tools/`. Each runs the program's own planning and drawing against a recording screen
@@ -240,6 +252,10 @@ on a virtual clock, so a ten-minute tree renders in a moment.
 - `heap_check.py SEED [TREES]` grows trees in a row in one planter and checks the
   carpet of leaves obeys the heap's rules (nothing resting on air, no slope steeper
   than a cell a row, piles within their height), after each fall and each crumble.
+- `sky_review.py OUTDIR [SEED] [TREES] [EVERY]` runs the sky and a few trees and writes
+  the screen every EVERY seconds as text, a tone map (each cloud cell as its grey), and a
+  log of every cloud born; it also checks that no cloud cell was ever written over the
+  tree, the planter, the carpet or a leaf in the air.
 
 To check the real thing, run it in a detached tmux of the console's size and capture the
 pane: `tmux -L t -f /dev/null new-session -d -x 135 -y 120 "xuuxij-bonsai --seed 1"`,
@@ -248,9 +264,10 @@ the program note each tree's start and how far off its mark it was.
 
 ## Design
 
-The forms, the foliage, the planters, the autumn and the growth were designed and
-reviewed over several rounds by a design reviewer working from references on bonsai
-forms and containers, with the renders above as the check. The references are listed in
+The forms, the foliage, the planters, the autumn, the growth and the sky were designed
+and reviewed over several rounds by a design reviewer working from references on bonsai
+forms and containers, on cloud kinds, and on clouds and mist in Japanese painting, with
+the renders above as the check. The references are listed in
 [docs/references.md](docs/references.md).
 
 ## Licence

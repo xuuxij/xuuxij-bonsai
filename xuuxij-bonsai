@@ -139,6 +139,7 @@ SETTINGS = {
     "pot_color":   ("auto", "color_auto", None, None, "the planter's body colour: auto (each design's own) or a colour"),
     "trim_color":  ("auto", "color_auto", None, None, "the planter's trim colour: auto or a colour"),
     "stand_color": ("red", "color", None, None, "the stand's colour (red = rosewood)"),
+    "sky":         (True, bool, None, None, "clouds drifting behind the tree (no = a black sky)"),
     "seed":        (None, "seed", None, None, "a number gives the same trees every time; none = random"),
 }
 
@@ -735,7 +736,8 @@ def make_attrs(cfg):
             "leaf": (leaf, leaf | curses.A_BOLD), "bud": leaf, "moss": leaf,
             "gravel": color["white"], "shadow": color["black"] | curses.A_BOLD,
             "stand": color[cfg["stand_color"]],
-            "turn": [color[name] | curses.A_BOLD for name in cfg["autumn_colors"].split()]}
+            "turn": [color[name] | curses.A_BOLD for name in cfg["autumn_colors"].split()],
+            "W": color["white"] | curses.A_BOLD, "g": color["white"], "d": color["black"] | curses.A_BOLD}
 
 
 def catmull_rom(points, lo, hi):
@@ -776,6 +778,370 @@ def gentle_path(points, lo, hi, limit=2):
     return path
 
 
+# ---- the sky ---------------------------------------------------------------------------
+# Clouds drift behind the tree, drawn only where nothing else is: real cloud kinds in
+# the sumi-e manner, an ink outline with a lit top and an empty interior, in three greys
+# on the black (W bold white for lit tops, g plain white for bodies, d bold black for
+# bases and far clouds). Cirrus high and slow, cumulus lower and faster, a mackerel sky
+# or a lenticular now and then, and the one stylised piece: a mist band (kasumi) that
+# forms behind the trunk. One wind for the whole run, which the leaf-fall's gusts
+# follow two times in three. Designed from the references listed in docs/references.md.
+
+SKY_TICK = 0.25       # seconds between the sky's steps
+
+
+def paint_for(text, rule):
+    return ["".join(" " if ch == " " else rule(y, x, ch, line, len(text)) for x, ch in enumerate(line))
+            for y, line in enumerate(text)]
+
+
+def _heap(y, x, ch, line, rows):
+    """Cumulus and lenticular: ~ in the top two rows lit, the base's _ in shadow."""
+    if ch == "_" and y == rows - 1:
+        return "d"
+    return "W" if ch == "~" and y <= 1 else "g"
+
+
+def _heap_soft(y, x, ch, line, rows):
+    return "d" if ch == "_" and y == rows - 1 else "g"
+
+
+def _cirrus(y, x, ch, line, rows):
+    """Cirrus, the farthest cloud, carries no bold white: the top two strands plain,
+    their tails (. _ in the last cells) and the lower strands dark."""
+    tail = ch in "._" and x > len(line.rstrip()) - 8
+    return "d" if y >= 2 or tail else "g"
+
+
+CLOUD_SHAPES = {
+    "cumulus": [  # (size, variant A rows, variant B rows)
+        (0, ["  .-~~-.  ", " (______) "], [" .-~.-~~-. ", "(_________)"]),
+        (1, ["        .-~~~-.._     ", "   .--~'         '-.  ", "  (_________________) "],
+            ["      .-~~-.   .-~-.   ", "   .-'      '-'     '-.", "  (___________________)"]),
+        (2, ["             .-~~-.               ", "       .-~~-'      '-~~-.         ",
+             "   .-~'                  '~-..__  ", "  (______________________________)"],
+            ["                  .-~~~-.         ", "       .--~~-.  .'       '-.      ",
+             "   .-~'       '-'            '~-. ", "  (______________________________)"]),
+    ],
+    # Cirrus is drawn for a wind blowing left: the hooked head leads and the strands
+    # trail behind it, each lower one set further back; mirrored for a wind blowing right.
+    "cirrus": [
+        (0, [" ,.-~~~~~--..__ "]),
+        (1, [" ,.-~~~~~~~~~~~--..__ ", "    `~~~~~--.._       ", "         `~-.         "]),
+        (2, [" ,.-~~~~~~~~~~~~~~~~~--..___ ", "    `~~~~~~~~~~~~--..__      ",
+             "          `~~~~--.._         ", "              `-.            "]),
+    ],
+    "lenticular": ["        _..--~~~~~~~~~--.._      ", "   _.-~'                   '~-._ ",
+                   "  '--..___________________..--'  "],
+}
+MIRROR = str.maketrans("()'`/\\", ")(`'\\/")
+
+
+def mirrored(rows):
+    width = max(len(r) for r in rows)
+    return [r.ljust(width)[::-1].translate(MIRROR) for r in rows]
+
+
+def mackerel_field(rng):
+    """A mackerel sky: one-row arcs .-. four columns apart, the rows offset by two
+    like a brick lattice of scales, two or three rows, the outer rows shorter so the
+    field is a wedge, one arc in five left out; the top row lit, the rest dark."""
+    rows = rng.randint(2, 3)
+    units = rng.randint(7, 11)  # arcs across the longest row
+    width = units * 4 + 5
+    text = [[" "] * width for _ in range(rows)]
+    mid = (rows - 1) / 2
+    for r in range(rows):
+        count = units - int(2 * abs(r - mid))
+        start = (units - count) // 2 * 4 + (2 if r % 2 else 0)
+        for k in range(count):
+            if rng.random() < 0.2:
+                continue
+            x = start + k * 4
+            if x + 3 <= width:
+                text[r][x:x + 3] = list(".-.")
+    text = ["".join(r) for r in text]
+    paint = ["".join(" " if ch == " " else ("g" if y == 0 else "d") for ch in r) for y, r in enumerate(text)]
+    return text, paint
+
+
+def stratocumulus_roll(rng):
+    units = ["-~~-", "-~~~-", "-~-", "-~~~~-"]
+    top = ""
+    while len(top) < rng.randint(34, 58):
+        top += "." + rng.choice(units) + "." + rng.choice(("__", ".._", "_"))
+    top = " _" + top[1:].rstrip("._") + "._ "
+    base = "(" + "_" * (len(top) - 2) + ")"
+    text = [top, base]
+    return text, paint_for(text, _heap_soft)
+
+
+def mist_band(rng, width):
+    """Spear mist (suyari-gasumi): not one line but three to six short bands of dark ~,
+    10 to 24 cells each on three or four adjacent rows, each overlapping its
+    neighbour by a third, the ends tapered to a dot, a rare ' of grey (the gold
+    leaf's dot) inside."""
+    rows = rng.randint(3, 4)
+    text = [[" "] * width for _ in range(rows)]
+    ends = [-99] * rows  # where each row's last band ended: bands on one row keep a gap
+    x, row = 0, rng.randrange(rows)
+    for _ in range(rng.randint(3, 6)):
+        length = min(rng.randint(10, 24), width - x)
+        if length < 6:
+            break
+        line = text[row]
+        for i in range(length):
+            ch = "." if i in (0, length - 1) else "'" if rng.random() < 1 / 20 else "~"
+            if line[x + i] == " ":
+                line[x + i] = ch
+        ends[row] = x + length
+        x += length - length // 3
+        free = [r for r in range(rows) if r != row and x >= ends[r] + 4]
+        if not free:
+            row = min((r for r in range(rows) if r != row), key=lambda r: ends[r])
+            x = ends[row] + 4
+        else:
+            row = rng.choice(free)
+    text = ["".join(r) for r in text]
+    paint = ["".join(" " if ch == " " else ("g" if ch == "'" else "d") for ch in r) for r in text]
+    return text, paint
+
+
+class Cloud:
+    __slots__ = ("kind", "size", "rows", "paint", "alt", "alt_paint", "x", "y", "speed", "born", "life",
+                 "phase", "phase_at", "fade", "ends", "breath_at", "width")
+
+    def __init__(self, kind, text, paint, x, y, speed, born, life, fade, ends, alt=None):
+        self.kind, self.size, self.rows, self.paint = kind, None, text, paint
+        self.alt, self.alt_paint = alt, (paint_for(alt, _heap) if alt else None)
+        self.x, self.y, self.speed, self.born, self.life, self.fade = float(x), y, speed, born, life, fade
+        self.ends = ends          # "edge": comes and goes by the screen's edge; "fade": forms and dissolves
+        self.phase, self.phase_at = ("in" if ends == "fade" else "on"), born
+        self.breath_at = born + 25
+        self.width = max(len(r) for r in text)
+
+
+class Sky:
+    FADE = {"cirrus": 40, "mackerel": 60, "lenticular": 30, "cumulus": 45, "mist": 40}
+    LEVELS = {("W", 2): "W", ("W", 1): "g", ("W", 0): "d", ("g", 2): "g", ("g", 1): "g", ("g", 0): "d",
+              ("d", 2): "d", ("d", 1): "d", ("d", 0): "d"}
+
+    def __init__(self, scr, rng, attrs):
+        self.scr, self.rng, self.attrs = scr, rng, attrs
+        self.H, self.W = scr.getmaxyx()
+        self.wind = rng.choice((-1, 1))
+        self.clouds = []
+        self.frame = {}         # (y, x) -> (char, attr) as drawn now
+        self.events = []        # (time, kind, size) still to be born this tree
+        self.tree_start = None
+        self.floor = self.H - 1  # the row the mist must keep clear of (the planter's rim)
+        self.last_draw = None
+        self.empty_since = None  # when the sky last became empty
+        self.rolled = False      # a stratocumulus roll has come this tree (one at most)
+        self.mood = "fair"
+
+    # ---- a tree's sky --------------------------------------------------------------------
+
+    def new_tree(self, now, cycle, floor):
+        """Draws the mood of the sky for this tree and the clouds it will bring."""
+        rng = self.rng
+        self.tree_start, self.floor = now, floor
+        if not self.clouds and rng.random() < 0.2:
+            self.wind = -self.wind  # the wind turns only over an empty sky
+        span = cycle if cycle else 600.0
+        self.mood = rng.choices(("clear", "fair", "high", "misty"), (20, 50, 15, 15))[0]
+        self.rolled = False
+        events = []
+        cirrus = {"clear": rng.randint(1, 2), "fair": 1, "high": 2, "misty": rng.randint(0, 1)}[self.mood]
+        for i in range(cirrus):
+            size = (2, 1)[i] if self.mood == "high" else rng.choice((0, 1, 1, 2))
+            events.append((rng.uniform(0, span * 0.7), "cirrus", size))
+        if self.mood == "fair":
+            t = rng.uniform(10, 90)
+            while t < span:
+                events.append((t, "cumulus", None))
+                t += rng.uniform(90, 150)
+        elif self.mood == "clear":
+            for _ in range(rng.randint(1, 2)):
+                events.append((rng.uniform(0, span * 0.8), "cumulus", None))
+        elif self.mood == "misty" and rng.random() < 0.5:
+            events.append((rng.uniform(0, span * 0.8), "cumulus", None))
+        if self.mood == "high" and rng.random() < 0.7:
+            events.append((rng.uniform(0, span * 0.3), "mackerel", None))
+        if self.mood != "misty" and rng.random() < 1 / 12:
+            events.append((rng.uniform(0, span * 0.5), "lenticular", None))
+        mists = rng.randint(1, 2) if self.mood == "misty" else (1 if rng.random() < 0.1 else 0)
+        for _ in range(mists):
+            events.append((rng.uniform(0, span * 0.6), "mist", None))
+        self.events = sorted(((now + t, k, s) for t, k, s in events), key=lambda e: e[0])
+
+    def rows_for(self, kind, size):
+        lo, hi = {"cirrus": (0.02, 0.16), "mackerel": (0.06, 0.22), "lenticular": (0.14, 0.26),
+                  "cumulus": ((0.10, 0.32), (0.18, 0.40), (0.24, 0.46))[size or 0],
+                  "roll": (0.30, 0.48), "mist": (0.52, 0.78)}[kind]
+        return int(lo * self.H), int(hi * self.H)
+
+    def birth(self, now, kind, size, ends=None):
+        """A new cloud of the kind, placed on free rows, by the edge or in place."""
+        rng, W = self.rng, self.W
+        scale = W / 135.0
+        alt = None
+        if kind == "cumulus":
+            size = rng.choice((0, 0, 1, 1, 1, 2)) if size is None else size
+            if (ends is None and rng.random() < 0.2 and not self.rolled
+                    and not any(c.kind == "roll" for c in self.clouds)):
+                kind, self.rolled = "roll", True  # the biggest shape: one per tree, one at a time
+        elif kind == "cirrus":  # two cirrus in the sky are never the same size
+            others = {c.size for c in self.clouds if c.kind == "cirrus"}
+            if size in others and len(others) < 3:
+                size = rng.choice([s for s in (0, 1, 2) if s not in others])
+        if kind == "cumulus":
+            _s, a, b = CLOUD_SHAPES["cumulus"][size]
+            text, alt = (a, b) if rng.random() < 0.5 else (b, a)
+            if self.wind < 0:
+                text, alt = mirrored(text), mirrored(alt)
+            paint = paint_for(text, _heap)
+            speed = (0.30, 0.40, 0.50)[size] * scale
+            ends = ends or ("edge" if (size == 2 or rng.random() < 0.6) else "fade")
+            life = rng.uniform(180, 300)
+        elif kind == "cirrus":
+            text = CLOUD_SHAPES["cirrus"][size][1]
+            if self.wind > 0:
+                text = mirrored(text)
+            paint = paint_for(text, _cirrus)
+            speed, ends, life = 0.08 * scale, "fade", rng.uniform(180, 360)
+        elif kind == "mackerel":
+            text, paint = mackerel_field(rng)
+            speed, ends, life = 0.12 * scale, "fade", rng.uniform(240, 360)
+        elif kind == "lenticular":
+            text = CLOUD_SHAPES["lenticular"]
+            paint = paint_for(text, _heap)
+            speed, ends, life = 0.0, "fade", rng.uniform(180, 300)
+        elif kind == "roll":
+            text, paint = stratocumulus_roll(rng)
+            speed, ends, life = 0.45 * scale, "edge", 0
+        else:  # mist
+            text, paint = mist_band(rng, rng.randint(min(40, W), max(min(40, W), int(0.6 * W))))
+            speed, ends, life = 0.0, "fade", rng.uniform(120, 240)
+        width = max(len(r) for r in text)
+        if width > W:
+            return
+        lo, hi = self.rows_for(kind, size)
+        if kind == "mist":
+            hi = min(hi, self.floor - 7 - len(text))
+            if hi < lo:
+                return
+        for _try in range(6):
+            y = rng.randint(lo, max(lo, hi))
+            if ends == "edge":
+                x = -width if self.wind > 0 else W
+            elif width + 20 > W:
+                x = (W - width) // 2
+            else:  # forms where its life's drift keeps it in view
+                drift = min(W - width - 20, int(speed * (life + self.FADE.get(kind, 40))))
+                lo_x, hi_x = (10, W - width - 10 - drift) if self.wind > 0 else (10 + drift, W - width - 10)
+                x = rng.randint(lo_x, max(lo_x, hi_x))
+            if not any(abs(c.y - y) < max(len(c.rows), len(text)) and c.x - 8 < x + width and x - 8 < c.x + c.width
+                       for c in self.clouds):
+                cloud = Cloud(kind, text, paint, x, y, speed * self.wind, now, life,
+                              self.FADE.get(kind, 40), ends, alt)
+                cloud.size = size
+                self.clouds.append(cloud)
+                return
+
+    # ---- time -------------------------------------------------------------------------------
+
+    def tick(self, now, grid, busy=(), draw=True):
+        """Moves the sky to `now` and draws what changed, where nothing else is: not
+        over the tree, the planter or the carpet (`grid`), nor a leaf in the air
+        (`busy`)."""
+        if draw and self.last_draw is not None and now - self.last_draw < SKY_TICK:
+            return
+        rng = self.rng
+        while self.events and self.events[0][0] <= now:
+            _t, kind, size = self.events.pop(0)
+            if len(self.clouds) < 5:
+                self.birth(now, kind, size)
+        kept = []
+        for c in self.clouds:
+            if self.last_draw is not None:
+                c.x += c.speed * (now - self.last_draw)
+            age = now - c.born
+            if c.phase == "in" and age >= c.fade:
+                c.phase, c.phase_at = "on", now
+            if c.phase == "on" and c.ends == "fade" and age >= c.life:
+                c.phase, c.phase_at = "out", now
+            if c.phase == "out" and now - c.phase_at >= c.fade:
+                continue  # gone
+            if c.ends == "edge" and (c.x > self.W + 2 or c.x + c.width < -2) and age > 5:
+                continue  # drifted off
+            if c.alt and now >= c.breath_at:  # a cumulus breathes: one hump grows, then settles
+                c.rows, c.alt = c.alt, c.rows
+                c.paint, c.alt_paint = c.alt_paint, c.paint
+                c.width = max(len(r) for r in c.rows)
+                c.breath_at = now + rng.uniform(25, 45)
+            kept.append(c)
+        self.clouds = kept
+        if kept:
+            self.empty_since = None
+        elif self.empty_since is None:
+            self.empty_since = now
+        elif now - self.empty_since >= 90:  # never an empty sky for long, whatever the mood
+            self.birth(now, "cumulus" if rng.random() < 2 / 3 else "cirrus", 0, ends="fade")
+            self.empty_since = None
+        self.last_draw = now
+        if not draw:
+            return
+        frame = {}
+        for c in self.clouds:
+            p = 1.0
+            if c.phase == "in":
+                p = (now - c.born) / c.fade
+            elif c.phase == "out":
+                p = 1.0 - (now - c.phase_at) / c.fade
+            x0 = int(round(c.x))
+            for dy, (row, paint) in enumerate(zip(c.rows, c.paint)):
+                for dx, (ch, pt) in enumerate(zip(row, paint)):
+                    if pt == " ":
+                        continue
+                    # Each cell has its moment in a fade: a cirrus from the head, its
+                    # tail last to come and first to go; a cumulus from its middle out.
+                    f = dx / max(1, c.width - 1)
+                    if c.kind == "cirrus" and self.wind > 0:
+                        f = 1 - f
+                    if c.kind not in ("cirrus", "mist"):
+                        f = abs(f - 0.5) * 2
+                    level = 2 if p >= 0.5 * f + 0.5 else 1 if p >= 0.5 * f + 0.25 else 0 if p >= 0.5 * f else -1
+                    if level < 0:
+                        continue
+                    y, x = c.y + dy, x0 + dx
+                    if 0 <= y < self.H and 0 <= x < self.W:
+                        frame[(y, x)] = (ch, self.attrs[self.LEVELS[(pt, level)]])
+        for cell in self.frame:
+            if cell not in frame and cell not in grid and cell not in busy:
+                self.put(cell, " ", 0)
+        for cell, (ch, attr) in frame.items():
+            if self.frame.get(cell) != (ch, attr) and cell not in grid and cell not in busy:
+                self.put(cell, ch, attr)
+        self.frame = frame
+
+    def put(self, cell, ch, attr):
+        try:
+            self.scr.addstr(cell[0], cell[1], ch, attr)
+        except curses.error:
+            pass
+
+    def cell(self, cell):
+        """What the sky shows at `cell`, for putting back under a passing leaf."""
+        return self.frame.get(cell)
+
+    def redraw(self, grid):
+        """Draws the whole sky again (after the screen was cleared)."""
+        for cell, (ch, attr) in self.frame.items():
+            if cell not in grid:
+                self.put(cell, ch, attr)
+
+
 class Stroke:
     """One line of the drawing: a trunk, a branch, or a cloud of foliage."""
     __slots__ = ("kind", "cells", "after", "pos", "lit", "cover")
@@ -799,6 +1165,8 @@ class Tree:
         before it) it grows in the same planter, out of the carpet the last one left."""
         self.scr, self.cfg, self.rng, self.attrs = scr, cfg, rng, attrs
         self.H, self.W = scr.getmaxyx()
+        self.sky = None  # the sky behind the tree, set by the screensaver loop
+        self.busy = set()  # cells a leaf or dust in the air is passing, kept from the sky
         self.cx = self.W // 2  # the base's column while planning; the composition is placed after
         self.air = min(AIR_ABOVE, max(3, self.H // 9))   # rows kept clear above the apex
         self.margin = min(MARGIN, max(2, self.W // 13))  # columns kept clear at each side
@@ -1734,12 +2102,9 @@ class Tree:
         start(time.monotonic())
         while events:
             t = events[0][0]
-            wait = t - time.monotonic()
-            if wait > 0:
-                self.scr.refresh()
-                outcome = pause(self.scr, wait)
-                if outcome:
-                    return outcome
+            outcome = self.sleep_until(t)
+            if outcome:
+                return outcome
             _t, _n, kind, item = heapq.heappop(events)
             if kind == "bud":
                 self.put(*item)
@@ -1774,20 +2139,31 @@ class Tree:
     # ---- autumn: the leaves turn, fall, and the bare tree crumbles ---------------------
 
     def restore(self, cell):
-        """Puts back what the screen holds at `cell`, or blank."""
+        """Puts back what the screen holds at `cell`: the tree, the planter, the carpet,
+        else the sky, else blank."""
         entry = self.grid.get(cell)
-        if entry is None:
-            self.put(cell[0], cell[1], " ", 0)
-        else:
+        if entry is not None:
             self.put(cell[0], cell[1], entry[1], entry[2])
+            return
+        sky = self.sky.cell(cell) if self.sky else None
+        if sky is not None:
+            self.put(cell[0], cell[1], sky[0], sky[1])
+        else:
+            self.put(cell[0], cell[1], " ", 0)
 
     def sleep_until(self, t):
-        """Shows the screen and waits until time `t`: 'key' or 'resize' if interrupted."""
-        wait = t - time.monotonic()
-        if wait > 0:
+        """Shows the screen and waits until time `t`, the sky moving meanwhile: 'key'
+        or 'resize' if interrupted, else None."""
+        while True:
+            now = time.monotonic()
+            if now >= t:
+                return None
             self.scr.refresh()
-            return pause(self.scr, wait)
-        return None
+            outcome = pause(self.scr, min(SKY_TICK, t - now))
+            if outcome:
+                return outcome
+            if self.sky:
+                self.sky.tick(time.monotonic(), self.grid, self.busy)
 
     def surface(self, x):
         """The ground a falling thing reaches at column x: the planter's soil row over
@@ -1996,7 +2372,10 @@ class Tree:
         while i < n or flying:
             wind = 0.3 * math.sin(2 * math.pi * (t - t0) / 30.0)  # the breeze everyone feels
             if t >= next_gust and i < n:
-                gust_end, gust_dir = t + 2.0, rng.choice((-1, 1))
+                gust_end = t + 2.0
+                gust_dir = rng.choice((-1, 1))
+                if self.sky:  # two gusts in three blow the way the clouds go
+                    gust_dir = self.sky.wind if rng.random() < 2 / 3 else -self.sky.wind
                 gust_per_tick = rng.randint(12, 25) / (2.0 / TICK)
                 next_gust = gust_end + rng.uniform(10, 25)
             if t < gust_end:
@@ -2043,6 +2422,7 @@ class Tree:
                 self.put(y, x, glyph, f["attr"])
                 still.append(f)
             flying = still
+            self.busy = {f["cell"] for f in flying}
             t += TICK
             outcome = self.sleep_until(t)
             if outcome:
@@ -2077,7 +2457,7 @@ class Tree:
             while k < len(steps) and t >= next_step - 1e-9:
                 for y, x in steps[k]:
                     self.grid.pop((y, x), None)
-                    self.put(y, x, " ", 0)
+                    self.restore((y, x))
                     if rng.random() < 0.5:
                         dust.append({"y": float(y), "x": max(0, min(self.W - 1, x + rng.choice((-1, 0, 0, 1)))),
                                      "vy": rng.uniform(1.0, 1.8), "char": rng.choice(".:'"), "cell": None})
@@ -2096,6 +2476,7 @@ class Tree:
                 d["cell"] = (y, x)
                 still.append(d)
             dust = still
+            self.busy = {d["cell"] for d in dust}
             t += TICK
             outcome = self.sleep_until(t)
             if outcome:
@@ -2146,14 +2527,16 @@ def run_tree(scr, cfg, tree, t_start, once=False):
     the bare tree stands until the crumble's moment, and nothing is cut short."""
     cycle = cfg["cycle"]
     crumble_at = tree.pace(cycle, t_start) if cycle else None
+    if tree.sky:
+        tree.sky.new_tree(time.monotonic(), cycle, tree.base)
     outcome = tree.draw()
     if outcome is None:
-        outcome = pause(scr, cfg["wait"])
+        outcome = tree.sleep_until(time.monotonic() + cfg["wait"])
     if outcome is None and not once:
         def bare():
             if crumble_at is not None:
                 return tree.sleep_until(crumble_at)
-            return pause(scr, cfg["bare"])
+            return tree.sleep_until(time.monotonic() + cfg["bare"])
 
         def mark():
             return tree.sleep_until(t_start + cycle) if crumble_at is not None else None
@@ -2186,6 +2569,7 @@ def screensaver(scr, args, cfg):
             pass
         return
     t_start = time.monotonic()
+    sky = None
     while True:
         try:
             fresh = settings(args)  # re-read, so an edit shows on the next tree
@@ -2196,7 +2580,20 @@ def screensaver(scr, args, cfg):
             rng = random.Random(seed)
         cfg = fresh
         attrs = make_attrs(cfg)
+        if sky is None and cfg["sky"]:
+            sky = Sky(scr, random.Random(None if seed is None else f"sky {seed}"), attrs)
+            # Five minutes of sky before the first tree, so it is not born under an empty one.
+            sky.new_tree(time.monotonic() - 300, cfg["cycle"], scr.getmaxyx()[0] - 1)
+            for t in range(300, 0, -1):
+                sky.tick(time.monotonic() - t, {}, draw=False)
+        elif sky is not None and not cfg["sky"]:
+            sky.clouds, sky.events = [], []
+            sky.tick(time.monotonic(), {})
+            sky = None
         tree = Tree(scr, cfg, rng, attrs, inherit)
+        tree.sky = sky
+        if sky:
+            sky.attrs = attrs
         if inherit is None:
             tree.draw_pot()
         log_path = os.environ.get("XUUXIJ_BONSAI_LOG")  # for timing checks only
@@ -2211,7 +2608,7 @@ def screensaver(scr, args, cfg):
         # start so a late landing never drifts the timer; without a cycle, right away.
         t_start = t_start + cfg["cycle"] if cfg["cycle"] else time.monotonic()
         if outcome == "resize":
-            inherit = None
+            inherit, sky = None, None  # a new sky for the new screen
             scr.erase()
             t_start = time.monotonic()
         elif tree.planter_spec() is not None:

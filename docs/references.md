@@ -1,6 +1,6 @@
 # References
 
-What the planters and the tall forms were designed from.
+What the planters, the tall forms and the sky were designed from.
 
 ## Pots
 
@@ -40,3 +40,25 @@ What the planters and the tall forms were designed from.
 - Bonsai styles. https://en.wikipedia.org/wiki/Bonsai_styles
 - Proportions (height 8 to 12 times the trunk's width for a literati, 6 to 8 for a
   formal upright). https://usecalcpro.com/garden/bonsai-calculator
+
+## Sky
+
+- Cloud genera, their heights and look. https://en.wikipedia.org/wiki/List_of_cloud_types
+  and the NWS cloud chart https://www.weather.gov/media/arh/brochures/CloudChart.pdf
+- Cirrus: the hooked generating head and the fall streaks trailing behind it; it looks
+  still yet rides the fastest wind. https://en.wikipedia.org/wiki/Cirrus_cloud and
+  https://en.wikipedia.org/wiki/Jet_stream
+- Lenticular, mackerel and mammatus.
+  https://www.metoffice.gov.uk/blog/2026/deep-dive-from-mountain-waves-to-mammatus and
+  https://en.wikipedia.org/wiki/Altocumulus_cloud
+- Fog and mist as grounded stratus. https://cloudappreciationsociety.org/cloud-library/fog/
+  and https://en.wikipedia.org/wiki/Stratus_cloud
+- ASCII clouds. https://www.asciiart.eu/nature/clouds
+- Kasumi and suyari-gasumi, the mist bands of Japanese painting.
+  https://projects.mcah.columbia.edu/jaanus/record/kasumi
+- Cloud motifs (unmon, kumotori). https://projects.mcah.columbia.edu/jaanus/record/unmon
+- Hiroshige's mist bands and the kirihaku (cut gold leaf) dots.
+  https://ukiyo-e.org/image/honolulu/5874
+- Rinpa gold clouds: Sōtatsu's Waves at Matsushima. https://asia.si.edu/object/F1906.231-232/
+- Sky gradation (bokashi) in prints. https://projects.mcah.columbia.edu/jaanus/node/3857
+- Clouds in Japanese art, a lecture. https://www.uni-heidelberg.de/en/node/50078
