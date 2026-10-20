@@ -39,6 +39,45 @@ USER_DIR = os.path.expanduser("~/.config/xuuxij-bonsai")  # pots/ and styles/ of
 COLORS = {"black": 0, "red": 1, "green": 2, "yellow": 3,
           "blue": 4, "magenta": 5, "cyan": 6, "white": 7}
 
+A_COLOR_MASK = curses.A_COLOR & 0xFFFFFFFF
+PAIR_SHIFT = (A_COLOR_MASK & -A_COLOR_MASK).bit_length() - 1  # where curses keeps the pair number
+
+
+class Pairs:
+    """Colour pairs made on demand: (foreground, background) -> the curses attribute, so
+    a thing drawn over the landscape takes the background of the cell it lands on. Black
+    and the terminal's default background are one pair."""
+
+    def __init__(self, live=True):
+        self.live = live   # False in the tools, which record attributes without a terminal
+        self.default = -1  # the background a pair with none gets
+        self.table, self.of = {}, {}
+
+    def attr(self, fg, bg=-1):
+        bg = self.default if bg in (0, -1) else bg
+        n = self.table.get((fg, bg))
+        if n is None:
+            n = len(self.table) + 1
+            if self.live and n >= curses.COLOR_PAIRS:  # out of pairs: lose the background
+                return self.attr(fg, -1) if bg != self.default else 0
+            self.table[(fg, bg)] = n
+            self.of[n] = (fg, bg)
+            if self.live:
+                curses.init_pair(n, fg, bg)
+        return (n << PAIR_SHIFT) & A_COLOR_MASK
+
+    def on(self, attr, bg):
+        """`attr` with its foreground kept, over the background `bg`."""
+        if bg <= 0:
+            return attr
+        n = (attr & A_COLOR_MASK) >> PAIR_SHIFT
+        fg = self.of[n][0] if n in self.of else 7
+        return (attr & ~A_COLOR_MASK) | self.attr(fg, bg)
+
+
+PAIRS = None        # made by make_attrs
+PALETTE_WAY = None  # how the console's palette was set: "linux", "curses" or None
+
 STYLES = ("moyogi", "chokkan", "shakan", "bunjin", "kengai")
 LEAF_SETS = (("&*", 65), ("*^", 35))
 
@@ -140,6 +179,8 @@ SETTINGS = {
     "trim_color":  ("auto", "color_auto", None, None, "the planter's trim colour: auto or a colour"),
     "stand_color": ("red", "color", None, None, "the stand's colour (red = rosewood)"),
     "sky":         (True, bool, None, None, "clouds drifting behind the tree (no = a black sky)"),
+    "landscape":   ("auto", "tristate", None, None, "the mountain landscape behind the clouds: auto (with "
+                    "the sky, when the screen has colours), yes or no; read when the program starts"),
     "seed":        (None, "seed", None, None, "a number gives the same trees every time; none = random"),
 }
 
@@ -611,7 +652,7 @@ def convert(key, raw):
         if name in POTS or name in USER_POTS:
             return name
         raise ValueError(f"pot must be auto, no or one of {', '.join(list(POTS) + list(USER_POTS))}, not {text!r}")
-    if kind == "stand":
+    if kind in ("stand", "tristate"):
         name = text.lower()
         if name == "auto":
             return "auto"
@@ -619,7 +660,7 @@ def convert(key, raw):
             return "yes"
         if name in ("no", "false", "off", "0", "none"):
             return "no"
-        raise ValueError(f"stand must be auto, yes or no, not {text!r}")
+        raise ValueError(f"{key} must be auto, yes or no, not {text!r}")
     if kind == "seed":
         if text.lower() in ("", "none", "random"):
             return None
@@ -714,19 +755,48 @@ BARE_TARGET = 20.0    # seconds the bare tree stands in a timed cycle, give or t
 LANDING_TAIL = 22.0   # seconds the last leaves take to land after the release window
 
 
-def make_attrs(cfg):
+def set_palette(palette):
+    """Gives the console's colour slots the exact RGB of `palette` (slot -> (hex, use)),
+    where the terminal allows it: the Linux console by its own sequence (all sixteen
+    slots), another terminal through curses. Returns whether it was done."""
+    global PALETTE_WAY
+    term = os.environ.get("TERM", "")
+    if term.startswith("linux"):
+        sys.stdout.write("".join("\033]P%x%02x%02x%02x" % ((slot,) + hex_rgb(rgb))
+                                 for slot, (rgb, _use) in palette.items()))
+        sys.stdout.flush()
+        PALETTE_WAY = "linux"
+    elif curses.has_colors() and curses.can_change_color():
+        for slot, (rgb, _use) in palette.items():
+            if slot < curses.COLORS:
+                r, g, b = hex_rgb(rgb)
+                curses.init_color(slot, r * 1000 // 255, g * 1000 // 255, b * 1000 // 255)
+        PALETTE_WAY = "curses"
+    return PALETTE_WAY is not None
+
+
+def reset_palette():
+    """Puts the console's palette back as it was (after curses has let go of the screen)."""
+    if PALETTE_WAY == "linux":
+        sys.stdout.write("\033]R")
+    elif PALETTE_WAY == "curses":
+        sys.stdout.write("\033]104\033\\")
+    sys.stdout.flush()
+
+
+def make_attrs(cfg, live=True):
     """Screen attributes: every console colour as a pair, and the parts drawn in them."""
-    color = {}
-    if curses.has_colors():
-        curses.start_color()
-        background = -1
-        try:
-            curses.use_default_colors()
-        except curses.error:
-            background = curses.COLOR_BLACK
-        for i, (name, number) in enumerate(COLORS.items()):
-            curses.init_pair(10 + i, number, background)
-            color[name] = curses.color_pair(10 + i)
+    global PAIRS
+    if PAIRS is None:
+        PAIRS = Pairs(live)
+        if live and curses.has_colors():
+            curses.start_color()
+            try:
+                curses.use_default_colors()
+            except curses.error:
+                PAIRS.default = curses.COLOR_BLACK
+    if not live or curses.has_colors():
+        color = {name: PAIRS.attr(number) for name, number in COLORS.items()}
     else:
         color = {name: curses.A_NORMAL for name in COLORS}
     wood, leaf = color[cfg["trunk_color"]], color[cfg["leaf_color"]]
@@ -778,6 +848,770 @@ def gentle_path(points, lo, hi, limit=2):
     return path
 
 
+# ---- the landscape ---------------------------------------------------------------------
+# The mountain landscape behind everything, designed from references on ASCII landscape
+# art, image halftoning and the sansui painting conventions (docs/references.md): a blue
+# print behind a coloured tree. Made in three passes, "paint, halftone, ink": the scene
+# is painted in RGB per cell (the sky's gradation, three ranges of mountains, the spear
+# mist, a still lake, the near shore), halftoned to the nearest mix the console shows (a
+# glyph from " ░▒█" in one slot over one of four background slots, with an ordered dither),
+# then drawn over with ASCII strokes (ridge lines, hatching, tree tops, the framing pines).
+# Built once per run from the seed: the same place for every tree.
+
+# ---- the palette ---------------------------------------------------------------------------
+# slot -> (RGB by day, what uses it). The tree's and planter's slots are listed so the whole
+# 16-slot palette is in one place; the landscape only draws with the slots in LETTERS.
+PALETTE_DAY = {
+    0:  ("#000000", "the console; the table under the planter; pines, forest, deepest shade"),
+    1:  ("#8a3324", "rosewood stand, Teizan red clay (planter only)"),
+    2:  ("#2f8f3e", "leaves shaded (tree only)"),
+    3:  ("#784c20", "trunk, branches, Teizan trim (tree only; unchanged)"),
+    4:  ("#2c5c9e", "deep sky, zenith (bg); the oval pot's glaze"),
+    5:  ("#5b8ec8", "mid sky (bg)"),
+    6:  ("#a8c4db", "pale sky at the horizon, mist, far lake (bg); the celadon pot"),
+    7:  ("#d5dbe0", "soft white: cloud bodies g, snow in shade, gravel"),
+    8:  ("#7b8b9b", "grey-blue: cloud bases d, rock, tree shadow"),
+    9:  ("#e0452b", "autumn red leaves (tree only)"),
+    10: ("#52c95a", "leaves lit, buds (tree only)"),
+    11: ("#f2d33c", "growing tip, autumn yellow leaves (tree only)"),
+    12: ("#4a7ab3", "steel blue: the lake near the viewer, shadowed snow; oval pot highlight"),
+    13: ("#8ea7c3", "haze: the far range (the free 'bright magenta' slot)"),
+    14: ("#c6d8e7", "ice: bright mist, snow in shade; celadon highlight"),
+    15: ("#f6f8fa", "bright white: cloud tops W, sunlit snow"),
+}
+# The same slots at other hours (round 2 material: swapped at a tree boundary by the clock).
+PALETTE_EVENING = {**PALETTE_DAY, **{
+    4: ("#2f4f86", ""), 5: ("#6a85b5", ""), 6: ("#c9bcb4", ""), 7: ("#dccfc8", ""),
+    8: ("#767a8e", ""), 12: ("#4e6a9a", ""), 13: ("#a0919f", ""), 14: ("#e3c9c2", ""),
+    15: ("#f9e4d4", "")}}
+PALETTE_NIGHT = {**PALETTE_DAY, **{
+    4: ("#0b1a33", ""), 5: ("#15294d", ""), 6: ("#2c4468", ""), 7: ("#8e9ab0", ""),
+    8: ("#4b5a70", ""), 12: ("#1d3a62", ""), 13: ("#3d5478", ""), 14: ("#6f88a8", ""),
+    15: ("#c9d6ea", "")}}
+PALETTE_DAWN = {**PALETTE_DAY, **{
+    4: ("#335f9b", ""), 5: ("#7196c5", ""), 6: ("#c5cfd8", ""), 7: ("#e0e0e2", ""),
+    8: ("#8691a0", ""), 12: ("#5c7fae", ""), 13: ("#a3b0c0", ""), 14: ("#d9dfe6", ""),
+    15: ("#fbf6f2", "")}}
+PALETTES = {"day": PALETTE_DAY, "dawn": PALETTE_DAWN, "evening": PALETTE_EVENING,
+            "night": PALETTE_NIGHT}
+# The clock (round 2): night 21:00-05:59, dawn 06:00-07:59, day 08:00-16:59, evening
+# 17:00-20:59, local time, swapped at a tree boundary; only these nine slots move.
+
+# Paint letters (foreground) -> slots. W, g, d keep the sky design's meaning.
+LETTERS = {"k": 0, "B": 4, "b": 5, "p": 6, "g": 7, "d": 8, "i": 12, "h": 13, "c": 14, "W": 15}
+BG_LETTERS = "kBbp"   # the only background slots the landscape uses (0, 4, 5, 6)
+# When the palette cannot be set (curses.can_change_color() is false), remap:
+FALLBACK = {"b": "B", "h": "d", "i": "B", "c": "p"}   # bg 'b' -> 'B' too
+
+COVER = {" ": 0.0, "░": 0.25, "▒": 0.5, "█": 1.0}
+
+
+def hex_rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def lerp(a, b, t):
+    return tuple(a[i] + (b[i] - a[i]) * t for i in range(3))
+
+
+def clamp(v, lo=0.0, hi=1.0):
+    return lo if v < lo else hi if v > hi else v
+
+
+def smoothstep(e0, e1, v):
+    t = clamp((v - e0) / (e1 - e0)) if e1 != e0 else (1.0 if v >= e1 else 0.0)
+    return t * t * (3 - 2 * t)
+
+
+# ---- noise ---------------------------------------------------------------------------------
+
+class Noise:
+    """Value noise on a lattice, 1-D and 2-D, from the seed. fbm sums octaves."""
+
+    def __init__(self, rng):
+        self.grid = {}
+        self.rng = rng
+
+    def _lat(self, *key):
+        v = self.grid.get(key)
+        if v is None:
+            v = self.grid[key] = self.rng.random()
+        return v
+
+    def n1(self, x, period, tag=0):
+        u = x / period
+        i = math.floor(u)
+        f = u - i
+        f = f * f * (3 - 2 * f)
+        return self._lat(tag, i) * (1 - f) + self._lat(tag, i + 1) * f
+
+    def fbm1(self, x, period, octaves=3, gain=0.5, tag=0):
+        s, a, p, total = 0.0, 1.0, period, 0.0
+        for o in range(octaves):
+            s += a * self.n1(x, p, (tag, o))
+            total += a
+            a *= gain
+            p /= 2.0
+        return s / total
+
+    def n2(self, x, y, px, py, tag=0):
+        u, v = x / px, y / py
+        i, j = math.floor(u), math.floor(v)
+        fu, fv = u - i, v - j
+        fu = fu * fu * (3 - 2 * fu)
+        fv = fv * fv * (3 - 2 * fv)
+        a = self._lat(tag, i, j) * (1 - fu) + self._lat(tag, i + 1, j) * fu
+        b = self._lat(tag, i, j + 1) * (1 - fu) + self._lat(tag, i + 1, j + 1) * fu
+        return a * (1 - fv) + b * fv
+
+    def fbm2(self, x, y, px, py, octaves=3, gain=0.5, tag=0):
+        s, a, total = 0.0, 1.0, 0.0
+        for o in range(octaves):
+            s += a * self.n2(x, y, px, py, (tag, o))
+            total += a
+            a *= gain
+            px /= 2.0
+            py /= 2.0
+        return s / total
+
+
+# ---- the layout ----------------------------------------------------------------------------
+
+def land_layout(W, H):
+    """Where the bands fall, in rows, for a screen of W x H. Shares of the height; the
+    planter's table at the bottom keeps the black the planter was designed on."""
+    tall = H >= 45
+    L = {
+        "summit": max(1, round(0.06 * H)),          # the main summit's row
+        "far_top": max(2, round(0.12 * H)),         # the far range's highest crest
+        "hill_top": round(0.22 * H),                # the side hills' crests
+        "mist_top": round(0.35 * H),                # the spear mist's core begins
+        "mist_bot": round(0.45 * H),                # the lake begins (hidden shore)
+        "lake_bot": round(0.80 * H) if tall else H - 2,
+        "shore_bot": round(0.86 * H) if tall else H - 1,
+        "margin": max(2, W // 13),                  # the tree keeps clear of this (MARGIN rule)
+        "centre": (int(0.34 * W), int(0.66 * W)),   # the quiet column band above the crown
+    }
+    L["spear_rise"] = max(2, round(0.10 * H))       # how far above mist_top the spears reach
+    return L
+
+
+# ---- the profiles (ridge rows per column, in half-rows: 2 per cell) -------------------------
+
+def peak_profile(W, base2, peaks, noise, tag, rough, max_slope=2.0):
+    """The upper envelope of peaks (x, height in half-rows, left width, right width,
+    exponent), roughened by fbm scaled to the local height, slopes clamped."""
+    y = []
+    for x in range(W):
+        best = base2
+        for (px, h, wl, wr, k) in peaks:
+            d = (px - x) / wl if x < px else (x - px) / wr
+            if d < 1:
+                v = base2 - h * (1 - d) ** k
+                best = min(best, v)
+        y.append(best)
+    out = []
+    for x in range(W):
+        local = base2 - y[x]
+        n = (noise.fbm1(x, 11.0, 3, 0.55, tag) - 0.5) * 2
+        out.append(y[x] + n * rough * (0.35 + 0.65 * local / max(1, base2)) * 6)
+    # no slope steeper than max_slope half-rows per column (a / or \ per cell)
+    for x in range(1, W):
+        out[x] = max(out[x], out[x - 1] - max_slope)
+    for x in range(W - 2, -1, -1):
+        out[x] = max(out[x], out[x + 1] - max_slope)
+    return out
+
+
+def land_profiles(rng, W, H, L, noise):
+    """The three ranges, the snowline and the light, drawn from the seed."""
+    base2 = 2 * L["mist_bot"] + 2
+    summit2 = 2 * L["summit"]
+    hmain = base2 - summit2
+    light = rng.choice((-1, 1))                 # -1: light from the left; +1: from the right
+    side = rng.choice((-1, 1))                  # the main summit left (-1) or right of centre
+    u_main = 0.5 + side * rng.uniform(0.11, 0.17)
+    x_main = int(u_main * W)
+    # The main range is a massed ridge, not one spike: the main summit (steep near the top,
+    # k>1, a wide foot, asymmetric), a second summit across the centre, a shoulder beside
+    # the main one, and three to five lesser summits spread along the width, so the crest
+    # runs the whole screen with saddles between.
+    wl = rng.uniform(0.5, 0.7) * W
+    wr = rng.uniform(0.5, 0.7) * W
+    peaks = [(x_main, hmain, wl, wr, rng.uniform(1.35, 1.6))]
+    x2 = int((1 - u_main + side * rng.uniform(-0.04, 0.06)) * W)
+    peaks.append((x2, hmain * rng.uniform(0.70, 0.86), rng.uniform(0.3, 0.5) * W,
+                  rng.uniform(0.3, 0.5) * W, rng.uniform(1.25, 1.5)))
+    peaks.append((x_main - side * int(rng.uniform(0.09, 0.14) * W), hmain * rng.uniform(0.62, 0.74),
+                  rng.uniform(0.2, 0.32) * W, rng.uniform(0.2, 0.32) * W, rng.uniform(1.15, 1.4)))
+    n_lesser = rng.randint(3, 5)
+    for i in range(n_lesser):
+        px = int((i + rng.uniform(0.15, 0.85)) / n_lesser * W)
+        peaks.append((px, hmain * rng.uniform(0.45, 0.68), rng.uniform(0.12, 0.25) * W,
+                      rng.uniform(0.12, 0.25) * W, rng.uniform(1.1, 1.4)))
+    yB = peak_profile(W, base2, peaks, noise, "B", rough=1.0)
+    # the far range: lower, smoother, four to six crests, so one shows in every saddle
+    far_h = base2 - 2 * L["far_top"]
+    fpeaks = []
+    n_far = rng.randint(4, 6)
+    for i in range(n_far):
+        fpeaks.append((int((i + rng.uniform(0.2, 0.8)) / n_far * W), far_h * rng.uniform(0.7, 1.0),
+                       rng.uniform(0.15, 0.3) * W, rng.uniform(0.15, 0.3) * W, rng.uniform(1.0, 1.25)))
+    yC = peak_profile(W, base2 + 6, fpeaks, noise, "C", rough=0.5, max_slope=1.5)
+    # the side hills: a wooded crest just inside each edge, falling toward the centre band
+    # and reaching the mist before it; a lesser knoll on each
+    c0, c1 = L["centre"]
+    hill_h = base2 - 2 * L["hill_top"]
+    hpeaks = [(int(0.03 * W), hill_h * rng.uniform(0.85, 1.0), 0.2 * W, (c0 - 0.03 * W) * rng.uniform(0.85, 1.0), 1.1),
+              (int(0.97 * W), hill_h * rng.uniform(0.7, 1.0), (W - c1 - 0.03 * W) * rng.uniform(0.85, 1.0), 0.2 * W, 1.1),
+              (int(rng.uniform(0.12, 0.24) * W), hill_h * rng.uniform(0.5, 0.75), 0.1 * W, 0.12 * W, 1.1),
+              (int(rng.uniform(0.76, 0.88) * W), hill_h * rng.uniform(0.5, 0.75), 0.12 * W, 0.1 * W, 1.1)]
+    yA = peak_profile(W, base2 + 4, hpeaks, noise, "A", rough=1.6, max_slope=2.0)
+    snowline = rng.uniform(0.42, 0.58)          # altitude (0 at the mist, 1 at the summit)
+    return {"yB": yB, "yC": yC, "yA": yA, "base2": base2, "summit2": summit2, "light": light,
+            "x_main": x_main, "snowline": snowline, "side": side}
+
+
+# ---- paint ---------------------------------------------------------------------------------
+
+SKY_STOPS = [(0.00, "#2c5c9e"), (0.17, "#5b8ec8"), (0.34, "#a8c4db")]
+C_SNOW_LIT, C_SNOW_SHADE = hex_rgb("#f4f6f8"), hex_rgb("#c0cfdd")
+C_ROCK_LIT, C_ROCK_SHADE = hex_rgb("#93a0ad"), hex_rgb("#64717f")
+C_RIB, C_FOREST = hex_rgb("#3e4854"), hex_rgb("#2a3542")
+# Round 2: the shade tones a step lighter (sky-lit snow and rock are blue-grey, not navy),
+# so a shade face halftones to d on p / d on b mixes and is no longer the heaviest shape.
+C_HAZE = hex_rgb("#7390b2")
+C_MIST = hex_rgb("#cfdbe6")
+C_LAKE_FAR, C_LAKE_NEAR = hex_rgb("#a8c4db"), hex_rgb("#86a9d0")
+C_HILL, C_HILL_EDGE = hex_rgb("#27323f"), hex_rgb("#3b4858")
+# These greys sit nearer the grey mixes (d on k, d on B, k on b) than the solid deep blue,
+# so shaded rock halftones as grey-blue texture and never as a flat patch of sky blue.
+C_REFLECT = hex_rgb("#4f6478")
+C_SHORE, C_SHORE_TOP = hex_rgb("#141c24"), hex_rgb("#2a3a4a")
+
+
+def sky_colour(v):
+    stops = [(s, hex_rgb(c)) for s, c in SKY_STOPS]
+    if v <= stops[0][0]:
+        return stops[0][1]
+    for (s0, c0), (s1, c1) in zip(stops, stops[1:]):
+        if v <= s1:
+            return lerp(c0, c1, (v - s0) / (s1 - s0))
+    return stops[-1][1]
+
+
+def sky_bg_letter(y, H):
+    """The background slot the quantizer will give the open sky on this row (for strokes)."""
+    v = y / H
+    return "B" if v < 0.085 else "b" if v < 0.255 else "p"
+
+
+def land_spears(rng, W, L):
+    """The spear mist: horizontal bands with straight edges above the mist's core, the
+    longest and highest in the centre. Each: (x0, x1, top row)."""
+    c0, c1 = L["centre"]
+    top = L["mist_top"]
+    rise = L["spear_rise"]
+    out = []
+    n = 6 if W >= 100 else 3
+    for i in range(n):
+        width = int(rng.uniform(0.22, 0.5) * W)
+        if i < 2:   # the centre spears
+            cx = int(rng.uniform(c0 + 0.1 * W, c1 - 0.1 * W))
+            r = top - rng.randint(int(0.7 * rise), rise)
+        else:
+            cx = int(rng.uniform(0.05 * W, 0.95 * W))
+            r = top - rng.randint(1, max(1, int(0.5 * rise)))
+        out.append((max(0, cx - width // 2), min(W - 1, cx + width // 2), r))
+    return out
+
+
+def land_paint(rng, W, H, L, P, noise):
+    """The RGB painting, one colour per cell, with a layer map for the ink pass."""
+    img = [[None] * W for _ in range(H)]
+    layer = [[" "] * W for _ in range(H)]      # ' ' sky, C far, B main, A hill, M mist, L lake, S shore, T table
+    lit_map = [[0.5] * W for _ in range(H)]
+    yB, yC, yA = P["yB"], P["yC"], P["yA"]
+    light, snowline = P["light"], P["snowline"]
+    c0, c1 = L["centre"]
+    mist_top, mist_bot = L["mist_top"], L["mist_bot"]
+    sp = land_spears(rng, W, L)
+    # Round 2: the mist core's top wanders by a row (-1, 0, +1) along a slow noise, so it
+    # is a bank of mist and not a ruled line across the screen.
+    wander = [int(round(2.5 * (noise.fbm1(x, 28.0, 2, 0.5, "misttop") - 0.5))) for x in range(W)]
+    for y in range(H):
+        v = y / H
+        for x in range(W):
+            mt = mist_top + wander[x]
+            col = sky_colour(v)
+            lay = " "
+            # the far range, in haze, fading into the pale sky toward its feet
+            if y * 2 >= yC[x]:
+                t = clamp((y - yC[x] / 2) / max(1.0, (mist_top - yC[x] / 2)))
+                col = lerp(C_HAZE, hex_rgb("#a8c4db"), 0.1 + 0.8 * t * t)
+                lay = "C"
+            # the main range
+            if y * 2 >= yB[x]:
+                depth = y - yB[x] / 2
+                alt = clamp((mist_top - y) / max(1.0, mist_top - P["summit2"] / 2))
+                s = (yB[min(W - 1, x + 2)] - yB[max(0, x - 2)]) / 4.0   # half-rows per col, + = falls right
+                lit = clamp(0.5 - 0.5 * s * light / 1.2 * -1)             # faces toward the light are lit
+                lit = clamp(0.5 + 0.5 * clamp(s * light / 1.2, -1, 1))
+                lit_map[y][x] = lit
+                nsnow = (noise.fbm2(x, y, 9.0, 4.0, 2, 0.5, "snow") - 0.5) * 0.22
+                snow = smoothstep(snowline - 0.10, snowline + 0.10, alt + nsnow)
+                snow *= 1.0 - 0.55 * smoothstep(1.2, 2.4, abs(s))   # steep faces shed snow
+                # the snow is not flat: wind-packed patches a shade darker, even where lit
+                grain = noise.fbm2(x, y, 6.0, 3.0, 2, 0.5, "snowgrain")
+                snow_c = lerp(C_SNOW_SHADE, C_SNOW_LIT, lit * (1 - 0.35 * smoothstep(0.55, 0.8, grain)))
+                rock_c = lerp(C_ROCK_SHADE, C_ROCK_LIT, lit)
+                col = lerp(rock_c, snow_c, snow)
+                # ribs: gullies run down the flank, away from the crest
+                u = x - (1 if s > 0 else -1) * depth * 0.5
+                rib = noise.fbm1(u, 5.0, 2, 0.5, "rib")
+                rib_k = smoothstep(0.58, 0.8, rib) * clamp(depth / 5.0) * (0.85 - 0.45 * lit)
+                col = lerp(col, C_RIB, rib_k * 0.65)
+                # the forest at the feet (outside the centre band; the centre is the mist valley)
+                f = smoothstep(0.26, 0.10, alt) * 0.85
+                if c0 - 6 < x < c1 + 6:
+                    f *= 0.35
+                col = lerp(col, C_FOREST, f)
+                lay = "B"
+            # the side hills, dark and wooded, only outside the centre band; their bodies
+            # fade into the mist from a few rows under the crest (the mist lies on them)
+            if y * 2 >= yA[x] and y < mist_bot + 2:
+                edge = smoothstep(2.5, 0.0, y - yA[x] / 2)
+                wood = noise.fbm2(x, y, 4.0, 2.0, 2, 0.5, "wood")     # the canopy's unevenness
+                hill = lerp(C_HILL, C_HILL_EDGE, 0.6 * edge + 0.3 * (wood - 0.5))
+                sink = smoothstep(yA[x] / 2 + 4, mist_top + 3, y) * 0.8
+                col = lerp(hill, C_MIST, sink)
+                lay = "A"
+            # the spear mist: the core band (its top softened over three rows), then the
+            # spears above it, straight-edged, their ends tapered over three cells
+            a = 0.0
+            if mt <= y < mist_bot:
+                a = 0.55 + 0.40 * smoothstep(mt - 1, mt + 3, y)
+            elif y >= mist_bot:
+                a = 0.0
+            else:
+                for (x0, x1, r) in sp:
+                    if r <= y and x0 <= x <= x1:
+                        end = min(x - x0, x1 - x)
+                        a = max(a, (0.5 + 0.35 * smoothstep(r, mt, y)) * smoothstep(-1, 3, end))
+                a = max(a, 0.45 * smoothstep(mt - 4, mt, y))
+            if a > 0:
+                col = lerp(col, C_MIST, a)
+                if a > 0.5:
+                    lay = "M"
+            # the lake, pale by the far shore, deeper toward the viewer; faint reflections
+            if y >= mist_bot:
+                t = smoothstep(0.45, 1.0, (y - mist_bot) / max(1, L["lake_bot"] - mist_bot))
+                col = lerp(C_LAKE_FAR, C_LAKE_NEAR, t)
+                lay = "L"
+                if x < c0 or x > c1:
+                    ys = 2 * mist_bot - y          # the hill row this cell mirrors
+                    if ys * 2 >= yA[x] and ys < mist_top:
+                        fade = 0.4 * smoothstep(mist_bot + 14, mist_bot, y) * (1 - 0.5 * smoothstep(c0 - 10, c0, x) if x < c0 else 1 - 0.5 * smoothstep(c1 + 10, c1, x))
+                        col = lerp(col, C_REFLECT, fade)
+                # the near shore (dark), its top edge a little lighter
+                if y >= L["lake_bot"]:
+                    col = lerp(C_SHORE, C_SHORE_TOP, smoothstep(2, 0, y - L["lake_bot"]))
+                    lay = "S"
+                if y >= L["shore_bot"]:
+                    col = (0, 0, 0)
+                    lay = "T"
+            img[y][x] = col
+            layer[y][x] = lay
+    return img, layer, lit_map, sp
+
+
+# ---- halftone ------------------------------------------------------------------------------
+
+BAYER8 = [[0, 32, 8, 40, 2, 34, 10, 42], [48, 16, 56, 24, 50, 18, 58, 26],
+          [12, 44, 4, 36, 14, 46, 6, 38], [60, 28, 52, 20, 62, 30, 54, 22],
+          [3, 35, 11, 43, 1, 33, 9, 41], [51, 19, 59, 27, 49, 17, 57, 25],
+          [15, 47, 7, 39, 13, 45, 5, 37], [63, 31, 55, 23, 61, 29, 53, 21]]
+
+# The mixes the quantizer may choose: (fg letter, bg letter, characters allowed).
+MIXES = [
+    ("k", "k", " "), ("B", "k", "░▒"), ("i", "k", "░▒"), ("d", "k", "░▒"),
+    ("B", "B", " "), ("b", "B", "░▒"), ("d", "B", "░▒"), ("k", "B", "░▒"),
+    ("b", "b", " "), ("B", "b", "░▒"), ("p", "b", "░▒"), ("h", "b", "░▒"), ("d", "b", "░▒"),
+    ("k", "b", "░▒"),
+    ("p", "p", " "), ("b", "p", "░▒"), ("c", "p", "░▒█"), ("g", "p", "░▒█"), ("W", "p", "░▒█"),
+    ("h", "p", "░▒"), ("d", "p", "░▒█"), ("i", "p", "░▒"), ("k", "p", "░▒"),
+]
+# Solid blocks (█) are allowed only for the snow and rock tones (W, g, c, d): every other
+# in-between tone is made inside the cell with ░ ▒, so a gradation never turns into a
+# checker of whole cells.
+GRAIN = 0.12   # a small penalty on mixing two far-apart colours in one cell
+
+
+def build_mixes(palette):
+    rgb = {let: hex_rgb(palette[slot][0]) for let, slot in LETTERS.items()}
+    out = []
+    for fg, bg, chars in MIXES:
+        for ch in chars:
+            c = COVER[ch]
+            mix = lerp(rgb[bg], rgb[fg], c)
+            d2 = sum((rgb[fg][i] - rgb[bg][i]) ** 2 for i in range(3))
+            grain = GRAIN * c * (1 - c) * 4 * d2
+            out.append((mix, grain, ch, fg, bg))
+    return out
+
+
+def land_halftone(img, palette, dither=12.0, quiet=None):
+    """Each cell's colour -> (char, fg, bg), nearest mix with an ordered dither. `quiet`
+    (a function y, x -> factor) scales the dither down where the tree stands."""
+    mixes = build_mixes(palette)
+    H, W = len(img), len(img[0])
+    cells = [[None] * W for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            t = img[y][x]
+            amp = dither * (quiet(y, x) if quiet else 1.0)
+            off = (BAYER8[y % 8][x % 8] / 64.0 - 0.5) * 2 * amp
+            tgt = (t[0] + off, t[1] + off, t[2] + off)
+            best, bc = None, 1e18
+            for mix, grain, ch, fg, bg in mixes:
+                cost = (mix[0] - tgt[0]) ** 2 + (mix[1] - tgt[1]) ** 2 + (mix[2] - tgt[2]) ** 2 + grain
+                if cost < bc:
+                    bc, best = cost, (ch, fg, bg)
+            cells[y][x] = best
+    return cells
+
+
+# ---- ink -----------------------------------------------------------------------------------
+
+def ridge_char(y2, slope):
+    """The stroke for a ridge crossing a cell: y2 the crest in half-rows (its parity says
+    which half of the cell), slope in half-rows per column (+ = falls to the right)."""
+    top = int(math.floor(y2)) % 2 == 0
+    if slope <= -1.4:
+        return "/"
+    if slope >= 1.4:
+        return "\\"
+    if abs(slope) < 0.35:
+        return "'" if top else "_"
+    if slope < 0:        # rising to the right: gentle
+        return "'" if top else "."
+    return "'" if top else "."
+
+
+def land_ink(cells, img, layer, lit_map, rng, W, H, L, P, noise):
+    """Writes the strokes over the halftone. Returns the cells (changed in place)."""
+    yB, yC, yA, light = P["yB"], P["yC"], P["yA"], P["light"]
+    c0, c1 = L["centre"]
+    mist_top, mist_bot = L["mist_top"], L["mist_bot"]
+    snowline = P["snowline"]
+
+    def write(y, x, ch, fg, bg=None):
+        if 0 <= y < H and 0 <= x < W:
+            cells[y][x] = (ch, fg, bg or cells[y][x][2])
+
+    def slope_at(prof, x):
+        return (prof[min(W - 1, x + 1)] - prof[max(0, x - 1)]) / 2.0
+
+    # the far range's crest: a soft line in haze on the sky
+    for x in range(W):
+        y = int(yC[x] // 2)
+        if y < mist_top - 1 and yC[x] < yB[x] - 1 and y >= 0:
+            write(y, x, ridge_char(yC[x], slope_at(yC, x)), "h", sky_bg_letter(y, H))
+    # the main range's crest: snow-white where snowed, grey where rock; on the sky's bg
+    for x in range(W):
+        y = int(yB[x] // 2)
+        if y >= mist_top - 1:
+            continue
+        s = slope_at(yB, x)
+        alt = clamp((mist_top - y) / max(1.0, mist_top - P["summit2"] / 2))
+        snowed = alt + (noise.fbm1(x, 6.0, 2, 0.5, "snowcrest") - 0.5) * 0.2 > snowline - 0.05
+        lit = lit_map[min(H - 1, y + 1)][x]
+        fg = ("W" if lit > 0.5 else "g") if snowed else ("d" if lit > 0.5 else "d")
+        ch = ridge_char(yB[x], s)
+        if abs(s) < 0.6 and yB[x] <= min(yB[max(0, x - 1)], yB[min(W - 1, x + 1)]) and alt > 0.5:
+            ch = "^"   # a summit
+        write(y, x, ch, fg, sky_bg_letter(y, H))
+    # gullies and hatching on the faces: down the flank, denser with depth, on the shade side
+    for y in range(L["summit"], mist_top):
+        for x in range(W):
+            if layer[y][x] != "B":
+                continue
+            depth = y - yB[x] / 2
+            if depth < 1.5:
+                continue
+            s = slope_at(yB, x)
+            lit = lit_map[y][x]
+            u = x - (1 if s > 0 else -1) * depth * 0.5
+            rib = noise.fbm1(u, 5.0, 2, 0.5, "rib")
+            thr = 0.72 - 0.08 * clamp(depth / 8.0) - 0.10 * (1 - lit)
+            alt = clamp((mist_top - y) / max(1.0, mist_top - P["summit2"] / 2))
+            if rib > thr and alt > 0.12:
+                ch = "\\" if s > 0 else "/"
+                ch_cell, fg_cell, bg_cell = cells[y][x]
+                fg = "d" if fg_cell in ("W", "g", "c", "p") else "k"
+                write(y, x, ch, fg)
+    # tree tops along the hills' crests and at the main range's feet (outside the centre)
+    for x in range(W):
+        y = int(yA[x] // 2)
+        if y < mist_bot:
+            write(y, x, "^" if rng.random() < 0.55 else ridge_char(yA[x], slope_at(yA, x)), "k", sky_bg_letter(y, H) if layer[max(0, y - 1)][x] in " C" else None)
+            if rng.random() < 0.35 and y + 1 < mist_bot:
+                write(y + 1, x, "^", "k")
+    for x in range(W):
+        if c0 - 4 < x < c1 + 4:
+            continue
+        for y in range(mist_top - 6, mist_top):
+            if layer[y][x] == "B" and y * 2 > yB[x] + 6 and rng.random() < 0.18:
+                write(y, x, "^", "d" if cells[y][x][1] in ("W", "g", "c") else "k")
+    # the lake: a few ripples, only at the sides and low down, never where the tree stands
+    m = L["margin"]
+    for y in range(mist_bot + 3, L["lake_bot"]):
+        for x in range(W):
+            far_side = x < c0 - 8 or x > c1 + 8
+            low = y > L["lake_bot"] - 5
+            if (far_side and rng.random() < 0.035) or (low and rng.random() < 0.05):
+                write(y, x, "-", "c" if cells[y][x][2] == "p" else "p")
+    # the shore: tufts on its top row
+    for x in range(W):
+        if rng.random() < 0.3:
+            write(L["lake_bot"], x, rng.choice('"\',.'), "k")
+    # the framing pines: one tall near each edge, a shorter beside it, feet on the shore
+    land_pines(cells, rng, W, H, L)
+    return cells
+
+
+# ---- the fixed drawings: pines (text rows + paint rows, the sky_shapes form) ---------------
+
+SHAPES = []
+
+
+def land_shape(name, text, rule):
+    width = max(len(t) for t in text)
+    text = [t.ljust(width) for t in text]
+    paint = ["".join(" " if ch == " " else rule(y, x, ch) for x, ch in enumerate(line))
+             for y, line in enumerate(text)]
+    SHAPES.append((name, text, paint))
+    return text, paint
+
+
+def ink_black(y, x, ch):
+    return "k"
+
+
+PINE_TALL = land_shape("pine tall (36 rows)", [
+    "     |      ",
+    "     ^      ",
+    "    /█\\     ",
+    "    |█|     ",
+    "   /███\\    ",
+    "   /███\\    ",
+    "    |█|     ",
+    "   /███\\    ",
+    "  /█████\\   ",
+    "  /█████\\   ",
+    "   /███\\    ",
+    "  /█████\\   ",
+    " /███████\\  ",
+    " /███████\\  ",
+    "  /█████\\   ",
+    " /███████\\  ",
+    "/█████████\\ ",
+    "/█████████\\ ",
+    "  /█████\\   ",
+    " /███████\\  ",
+    "/█████████\\ ",
+    "/█████████\\ ",
+    " /███████\\  ",
+    "/█████████\\ ",
+    "/██████████\\",
+    "/██████████\\",
+    " /███████\\  ",
+    "/█████████\\ ",
+    "/██████████\\",
+    "/██████████\\",
+    "/██████████\\",
+    "     █      ",
+    "     █      ",
+    "     █      ",
+    "     █      ",
+    "     █      ",
+], ink_black)
+
+PINE_MID = land_shape("pine mid (22 rows)", [
+    "    ^    ",
+    "   /█\\   ",
+    "   |█|   ",
+    "  /███\\  ",
+    "   |█|   ",
+    "  /███\\  ",
+    " /█████\\ ",
+    "  /███\\  ",
+    " /█████\\ ",
+    "/███████\\",
+    " /█████\\ ",
+    "/███████\\",
+    "/███████\\",
+    " /█████\\ ",
+    "/███████\\",
+    "/███████\\",
+    "/███████\\",
+    "/███████\\",
+    "    █    ",
+    "    █    ",
+    "    █    ",
+    "    █    ",
+], ink_black)
+
+PINE_SMALL = land_shape("pine small (10 rows)", [
+    "  ^  ",
+    " /█\\ ",
+    " |█| ",
+    "/███\\",
+    " /█\\ ",
+    "/███\\",
+    "/███\\",
+    "/███\\",
+    "  █  ",
+    "  █  ",
+], ink_black)
+
+PINE_RIDGE = land_shape("pine on a ridge (3 rows)", [
+    " ^ ",
+    "/█\\",
+    " | ",
+], ink_black)
+
+
+def scale_shape(text, rows_wanted):
+    """A shorter copy of a pine: rows sampled evenly (the trunk rows kept at the end)."""
+    if rows_wanted >= len(text):
+        return text
+    n = len(text)
+    idx = sorted({int(i * (n - 1) / max(1, rows_wanted - 1)) for i in range(rows_wanted)})
+    return [text[i] for i in idx]
+
+
+def land_stamp(cells, text, paint, y0, x0, H, W):
+    for dy, (row, prow) in enumerate(zip(text, paint)):
+        for dx, (ch, p) in enumerate(zip(row, prow)):
+            if p == " ":
+                continue
+            y, x = y0 + dy, x0 + dx
+            if 0 <= y < H and 0 <= x < W:
+                cells[y][x] = (ch, p, cells[y][x][2])
+
+
+def land_pines(cells, rng, W, H, L):
+    """Pines at the two margins, feet on the shore's top row, never alike on both sides:
+    one side a tall pine cut by the edge with a small one at its foot, the other a mid
+    pine standing a little in from the edge (or a tall one, 1 time in 3). Heights scale
+    with the screen; nothing is placed on a screen under 30 rows."""
+    if H < 30:
+        return
+    foot = L["lake_bot"]
+    tall_rows = max(8, min(36, int(0.32 * H)))
+    mid_rows = max(6, min(22, int(0.19 * H)))
+    small_rows = max(4, min(10, int(0.085 * H)))
+    tall = (scale_shape(PINE_TALL[0], tall_rows), scale_shape(PINE_TALL[1], tall_rows))
+    mid = (scale_shape(PINE_MID[0], mid_rows), scale_shape(PINE_MID[1], mid_rows))
+    small = (scale_shape(PINE_SMALL[0], small_rows), scale_shape(PINE_SMALL[1], small_rows))
+    tw, mw, sw = len(tall[0][0]), len(mid[0][0]), len(small[0][0])
+    tall_side = rng.choice((-1, 1))
+    for side in (-1, 1):
+        if side == tall_side:
+            cut = rng.randint(2, 4)
+            tx = -cut if side < 0 else W - tw + cut
+            land_stamp(cells, tall[0], tall[1], foot - tall_rows + 1, tx, H, W)
+            if rng.random() < 0.7:
+                sx = (tx + tw - 2) if side < 0 else (tx - sw + 2)
+                land_stamp(cells, small[0], small[1], foot - small_rows + 1, sx, H, W)
+        elif rng.random() < 0.33:
+            cut = rng.randint(3, 5)
+            tx = -cut if side < 0 else W - tw + cut
+            land_stamp(cells, tall[0], tall[1], foot - tall_rows + 1, tx, H, W)
+        else:
+            inset = rng.randint(1, 3)
+            mx = inset if side < 0 else W - mw - inset
+            land_stamp(cells, mid[0], mid[1], foot - mid_rows + 1, mx, H, W)
+            if rng.random() < 0.5:
+                sx = (mx + mw - 1) if side < 0 else (mx - sw + 1)
+                land_stamp(cells, small[0], small[1], foot - small_rows + 1, sx, H, W)
+
+
+# ---- the backdrop --------------------------------------------------------------------------
+
+def land_backdrop(W, H, seed, palette=PALETTE_DAY):
+    """Rows of cells (char, fg letter, bg letter) for a W x H screen from the seed."""
+    rng = random.Random(seed)
+    noise = Noise(random.Random(seed * 7919 + 1))
+    L = land_layout(W, H)
+    P = land_profiles(rng, W, H, L, noise)
+    img, layer, lit_map, sp = land_paint(rng, W, H, L, P, noise)
+    c0, c1 = L["centre"]
+
+    def quiet(y, x):   # less dither where the tree stands: the lake's centre
+        if y >= L["mist_top"] and L["margin"] <= x < W - L["margin"]:
+            return 0.35
+        return 1.0
+
+    cells = land_halftone(img, palette, dither=7.0, quiet=quiet)
+    land_ink(cells, img, layer, lit_map, rng, W, H, L, P, noise)
+    return cells, {"layout": L, "profiles": P, "layer": layer}
+
+
+# A paint letter -> (console colour, bold). Backgrounds use the colour alone.
+LAND_INK = {"k": (0, False), "B": (4, False), "b": (5, False), "p": (6, False), "g": (7, False),
+            "d": (0, True), "i": (4, True), "h": (5, True), "c": (6, True), "W": (7, True)}
+
+
+class Backdrop:
+    """The landscape as the screen holds it: a character and an attribute per cell, with
+    the background slot each cell shows, so everything drawn over it (the tree, the
+    planter, the clouds, a falling leaf) takes the cell's own background."""
+
+    def __init__(self, W, H, seed, pairs, fallback=False):
+        cells, self.meta = land_backdrop(W, H, seed)
+        self.W, self.H, self.pairs = W, H, pairs
+        self.chars, self.bg, self.attr = [], [], []
+        for row in cells:
+            chars, bgs, attrs = [], [], []
+            for ch, fg, bg in row:
+                if fallback:  # a terminal whose palette cannot be set: the standard colours
+                    fg, bg = FALLBACK.get(fg, fg), ("B" if bg == "b" else bg)
+                colour, bold = LAND_INK[fg]
+                under = LAND_INK[bg][0]
+                chars.append(ch)
+                bgs.append(under)
+                attrs.append(pairs.attr(colour, under) | (curses.A_BOLD if bold else 0))
+            self.chars.append(chars)
+            self.bg.append(bgs)
+            self.attr.append(attrs)
+
+    def cell(self, y, x):
+        return self.chars[y][x], self.attr[y][x]
+
+    def clear(self, y, x0, x1):
+        """Blanks the cells x0..x1 of row y to black: the planter's body sits on black."""
+        for x in range(max(0, x0), min(self.W - 1, x1) + 1):
+            self.chars[y][x], self.bg[y][x], self.attr[y][x] = " ", 0, self.pairs.attr(0, 0)
+
+    def draw(self, scr):
+        """Paints the whole landscape (runs of one attribute at a time)."""
+        for y in range(self.H):
+            chars, attrs = self.chars[y], self.attr[y]
+            x = 0
+            while x < self.W:
+                k = x + 1
+                while k < self.W and attrs[k] == attrs[x]:
+                    k += 1
+                try:
+                    scr.addstr(y, x, "".join(chars[x:k]), attrs[x])
+                except curses.error:
+                    pass
+                x = k
+
+
 # ---- the sky ---------------------------------------------------------------------------
 # Clouds drift behind the tree, drawn only where nothing else is: real cloud kinds in
 # the sumi-e manner, an ink outline with a lit top and an empty interior, in three greys
@@ -796,10 +1630,28 @@ def paint_for(text, rule):
 
 
 def _heap(y, x, ch, line, rows):
-    """Cumulus and lenticular: ~ in the top two rows lit, the base's _ in shadow."""
+    """Cumulus and lenticular: ~ in the top two rows lit, the base's _ in shadow; a
+    filled interior (over a landscape) soft white, its top row lit."""
     if ch == "_" and y == rows - 1:
         return "d"
+    if ch == "░":  # a filled interior: soft white, a grey underside
+        return "d" if y == rows - 1 else "g"
     return "W" if ch == "~" and y <= 1 else "g"
+
+
+def heap_fill(text):
+    """A cumulus with its inside filled, so it veils what it crosses instead of showing
+    it through a wire outline: ░ between the first and last stroke of each row below
+    the top one (the outline is the lit top already); the base row's fill is grey."""
+    out = []
+    for y, row in enumerate(text):
+        inked = [x for x, ch in enumerate(row) if ch != " "]
+        if y == 0 or len(inked) < 2:
+            out.append(row)
+            continue
+        out.append(row[:inked[0]] + "".join(ch if ch != " " else "░" for ch in row[inked[0]:inked[-1] + 1])
+                   + row[inked[-1] + 1:])
+    return out
 
 
 def _heap_soft(y, x, ch, line, rows):
@@ -929,6 +1781,7 @@ class Sky:
     def __init__(self, scr, rng, attrs):
         self.scr, self.rng, self.attrs = scr, rng, attrs
         self.H, self.W = scr.getmaxyx()
+        self.backdrop = None  # the landscape the clouds drift over, if there is one
         self.wind = rng.choice((-1, 1))
         self.clouds = []
         self.frame = {}         # (y, x) -> (char, attr) as drawn now
@@ -1000,6 +1853,8 @@ class Sky:
             text, alt = (a, b) if rng.random() < 0.5 else (b, a)
             if self.wind < 0:
                 text, alt = mirrored(text), mirrored(alt)
+            if self.backdrop:
+                text, alt = heap_fill(text), heap_fill(alt)
             paint = paint_for(text, _heap)
             speed = (0.30, 0.40, 0.50)[size] * scale
             ends = ends or ("edge" if (size == 2 or rng.random() < 0.6) else "fade")
@@ -1119,13 +1974,21 @@ class Sky:
                         frame[(y, x)] = (ch, self.attrs[self.LEVELS[(pt, level)]])
         for cell in self.frame:
             if cell not in frame and cell not in grid and cell not in busy:
-                self.put(cell, " ", 0)
+                if self.backdrop:
+                    self.put_raw(cell, *self.backdrop.cell(*cell))
+                else:
+                    self.put(cell, " ", 0)
         for cell, (ch, attr) in frame.items():
             if self.frame.get(cell) != (ch, attr) and cell not in grid and cell not in busy:
                 self.put(cell, ch, attr)
         self.frame = frame
 
     def put(self, cell, ch, attr):
+        if self.backdrop:  # over the landscape's own background there
+            attr = PAIRS.on(attr, self.backdrop.bg[cell[0]][cell[1]])
+        self.put_raw(cell, ch, attr)
+
+    def put_raw(self, cell, ch, attr):
         try:
             self.scr.addstr(cell[0], cell[1], ch, attr)
         except curses.error:
@@ -1166,6 +2029,7 @@ class Tree:
         self.scr, self.cfg, self.rng, self.attrs = scr, cfg, rng, attrs
         self.H, self.W = scr.getmaxyx()
         self.sky = None  # the sky behind the tree, set by the screensaver loop
+        self.backdrop = None  # the landscape behind the sky, likewise
         self.busy = set()  # cells a leaf or dust in the air is passing, kept from the sky
         self.cx = self.W // 2  # the base's column while planning; the composition is placed after
         self.air = min(AIR_ABOVE, max(3, self.H // 9))   # rows kept clear above the apex
@@ -1995,6 +2859,11 @@ class Tree:
             if top_only and i > 1:
                 break
             y = y_top + i
+            if self.backdrop and not top_only:  # the planter's body sits on black
+                inked = [k for k, p in enumerate(paint) if p != " "]
+                if inked:
+                    self.backdrop.clear(y, x0 + inked[0], x0 + inked[-1])
+                    self.put(y, x0 + inked[0], " " * (inked[-1] - inked[0] + 1), 0)
             for k, (ch, p) in enumerate(zip(text, paint)):
                 if p == " ":
                     continue
@@ -2009,11 +2878,28 @@ class Tree:
     # ---- drawing -----------------------------------------------------------------------
 
     def put(self, y, x, text, attr):
-        if 0 <= y < self.H and 0 <= x < self.W:
-            try:
-                self.scr.addstr(y, x, text[: self.W - x], attr)
-            except curses.error:
-                pass  # the bottom-right cell refuses a write; nothing is lost
+        """Writes `text` at (y, x) in `attr`; over a landscape, each cell on the
+        landscape's own background there."""
+        if not (0 <= y < self.H and 0 <= x < self.W):
+            return
+        text = text[: self.W - x]
+        if self.backdrop is None:
+            self.put_raw(y, x, text, attr)
+            return
+        bg = self.backdrop.bg[y]
+        i = 0
+        while i < len(text):
+            k = i + 1
+            while k < len(text) and bg[x + k] == bg[x + i]:
+                k += 1
+            self.put_raw(y, x + i, text[i:k], PAIRS.on(attr, bg[x + i]))
+            i = k
+
+    def put_raw(self, y, x, text, attr):
+        try:
+            self.scr.addstr(y, x, text, attr)
+        except curses.error:
+            pass  # the bottom-right cell refuses a write; nothing is lost
 
     def delay(self, s):
         """Seconds before stroke `s` draws its next cell."""
@@ -2148,6 +3034,8 @@ class Tree:
         sky = self.sky.cell(cell) if self.sky else None
         if sky is not None:
             self.put(cell[0], cell[1], sky[0], sky[1])
+        elif self.backdrop:
+            self.put_raw(cell[0], cell[1], *self.backdrop.cell(*cell))
         else:
             self.put(cell[0], cell[1], " ", 0)
 
@@ -2570,6 +3458,7 @@ def screensaver(scr, args, cfg):
         return
     t_start = time.monotonic()
     sky = None
+    backdrop = None
     while True:
         try:
             fresh = settings(args)  # re-read, so an edit shows on the next tree
@@ -2580,8 +3469,15 @@ def screensaver(scr, args, cfg):
             rng = random.Random(seed)
         cfg = fresh
         attrs = make_attrs(cfg)
+        if backdrop is None and cfg["sky"] and cfg["landscape"] != "no" and curses.has_colors():
+            # The landscape: once per run (and again after a resize), the same place for
+            # every tree; the console's palette set to its colours where that is allowed.
+            backdrop = Backdrop(cols, rows, seed if seed is not None else random.randrange(1 << 30),
+                                PAIRS, fallback=not set_palette(PALETTE_DAY))
+            backdrop.draw(scr)
         if sky is None and cfg["sky"]:
             sky = Sky(scr, random.Random(None if seed is None else f"sky {seed}"), attrs)
+            sky.backdrop = backdrop
             # Five minutes of sky before the first tree, so it is not born under an empty one.
             sky.new_tree(time.monotonic() - 300, cfg["cycle"], scr.getmaxyx()[0] - 1)
             for t in range(300, 0, -1):
@@ -2591,7 +3487,7 @@ def screensaver(scr, args, cfg):
             sky.tick(time.monotonic(), {})
             sky = None
         tree = Tree(scr, cfg, rng, attrs, inherit)
-        tree.sky = sky
+        tree.sky, tree.backdrop = sky, backdrop
         if sky:
             sky.attrs = attrs
         if inherit is None:
@@ -2608,8 +3504,9 @@ def screensaver(scr, args, cfg):
         # start so a late landing never drifts the timer; without a cycle, right away.
         t_start = t_start + cfg["cycle"] if cfg["cycle"] else time.monotonic()
         if outcome == "resize":
-            inherit, sky = None, None  # a new sky for the new screen
+            inherit, sky, backdrop = None, None, None  # a new sky and landscape for the new screen
             scr.erase()
+            rows, cols = scr.getmaxyx()
             t_start = time.monotonic()
         elif tree.planter_spec() is not None:
             inherit = {"planter": tree.planter_spec(), "grid": tree.grid}
@@ -2631,6 +3528,8 @@ def main(argv=None):
         curses.wrapper(screensaver, args, cfg)
     except KeyboardInterrupt:
         pass
+    finally:
+        reset_palette()
     return 0
 
 

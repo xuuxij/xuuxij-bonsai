@@ -169,6 +169,7 @@ restart. A flag on the command line wins over the file.
 | `trim_color` | `auto` | the planter's trim colour: auto or a colour |
 | `stand_color` | `red` | the stand's colour (red = rosewood) |
 | `sky` | `yes` | clouds drifting behind the tree (no = a black sky) |
+| `landscape` | `auto` | the mountain landscape behind the clouds: auto (with the sky, when the screen has colours), yes or no; read when the program starts |
 | `seed` | `none` | a number gives the same trees every time; none = random |
 
 ## Your own planters and forms
@@ -234,6 +235,23 @@ trunk. Each tree's sky has a mood (clear, fair, high or misty), there is one win
 whole run, which the leaf-fall's gusts mostly follow, and a cloud enters by the upwind
 edge or forms in place and dissolves, tail first. `sky = no` leaves the sky black.
 
+**The landscape.** Behind the clouds, a mountain landscape in blues and greys only, the
+way the Edo *aizuri-e* were printed in blue so that the bonsai is the one thing in colour:
+a sky deepening from the horizon to the zenith, snowy peaks with hatched shade faces and
+gullies, a far range dissolving in haze, wooded hills at the sides, a band of spear mist
+hiding the mountains' feet, a still pale lake filling the middle of the screen as the
+tree's own ground, two black pines framing the edges, and the black table the planter was
+designed on. It is made in three passes: the scene is painted in RGB per cell, halftoned
+to the nearest mix the console can show (a shade character ░ ▒ █ in one colour over one of
+four backgrounds, with an ordered dither, so gradations are dotted like a print's
+*bokashi*), then drawn over with ASCII strokes for ridge lines, hatching, tree tops and
+the pines. Drawn once per run from the seed, so no two runs share a mountain and every
+tree in a run lives in the same place. The console's sixteen colour slots are set to the
+design's exact RGB where the terminal allows it (the Linux console, xterm); elsewhere the
+standard colours stand in. Everything in front of it, down to a single falling leaf, is
+drawn on the landscape's own background at that cell. `landscape = no` keeps the black
+sky with the clouds.
+
 ## Tools
 
 In `tools/`. Each runs the program's own planning and drawing against a recording screen
@@ -256,6 +274,9 @@ on a virtual clock, so a ten-minute tree renders in a moment.
   the screen every EVERY seconds as text, a tone map (each cloud cell as its grey), and a
   log of every cloud born; it also checks that no cloud cell was ever written over the
   tree, the planter, the carpet or a leaf in the air.
+- `scene_review.py OUTDIR [SEED] [TREES] [AT=t1,t2,...]` runs the landscape, the sky and
+  a few trees and draws the screen at the given seconds as PNG images in the palette's
+  colours (needs Pillow), with the text of each frame.
 
 To check the real thing, run it in a detached tmux of the console's size and capture the
 pane: `tmux -L t -f /dev/null new-session -d -x 135 -y 120 "xuuxij-bonsai --seed 1"`,
@@ -264,10 +285,11 @@ the program note each tree's start and how far off its mark it was.
 
 ## Design
 
-The forms, the foliage, the planters, the autumn, the growth and the sky were designed
-and reviewed over several rounds by a design reviewer working from references on bonsai
-forms and containers, on cloud kinds, and on clouds and mist in Japanese painting, with
-the renders above as the check. The references are listed in
+The forms, the foliage, the planters, the autumn, the growth, the sky and the landscape
+were designed and reviewed over several rounds by a design reviewer working from
+references on bonsai forms and containers, on cloud kinds, on ASCII and text-mode art and
+image halftoning, and on the mountain, cloud and mist conventions of Japanese painting,
+with the renders above as the check. The references are listed in
 [docs/references.md](docs/references.md).
 
 ## Licence

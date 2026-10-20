@@ -62,3 +62,45 @@ What the planters, the tall forms and the sky were designed from.
 - Rinpa gold clouds: Sōtatsu's Waves at Matsushima. https://asia.si.edu/object/F1906.231-232/
 - Sky gradation (bokashi) in prints. https://projects.mcah.columbia.edu/jaanus/node/3857
 - Clouds in Japanese art, a lecture. https://www.uni-heidelberg.de/en/node/50078
+
+## Landscape
+
+- ASCII mountains, asciiart.eu (Joan Stark's peaks with `^` snow and `=~-` water; hatched
+  faces; `^` forests). https://www.asciiart.eu/nature/mountains
+- ASCII mountains and landscapes, ascii.co.uk. https://ascii.co.uk/art/mountain and
+  https://ascii.co.uk/art/landscape
+- Joan Stark's tutorial: the slope ramp `_,.-'"^`, characters by their height in the cell.
+  https://ludd.ltu.se/~vk/pics/ascii/junkyard/techstuff/tutorials/Joan_Stark.html
+- Hayley Wakenshaw's tutorial: diagonals and gradual slopes.
+  https://ludd.ltu.se/~vk/pics/ascii/junkyard/techstuff/tutorials/Hayley_Wakenshaw.html
+- Xu, Zhang, Wong, "Structure-based ASCII Art", SIGGRAPH 2010: tone-based against
+  structure-based ASCII art. https://history.siggraph.org/?p=105594
+- Paul Bourke, character representation of grey-scale images: the density ramps.
+  https://paulbourke.net/dataformats/asciiart/
+- Ordered (Bayer) dithering. https://en.wikipedia.org/wiki/Ordered_dithering
+- Floyd-Steinberg error diffusion.
+  https://en.wikipedia.org/wiki/Floyd%E2%80%93Steinberg_dithering
+- libcaca's study of dithering for text mode.
+  https://gitea.zoy.org/cacalabs/web/src/branch/master/www/study/part3.html
+- Semigraphics and block art: half-block pixels, teletext mosaics, PETSCII.
+  https://en.wikipedia.org/wiki/Semigraphics and https://en.wikipedia.org/wiki/Block_art
+- ANSI art: 16 foreground and 8 background colours.
+  https://battleofthebits.com/lyceum/View/ansi+%28format%29
+- The three distances (san'en) of Guo Xi; the six distances with mist.
+  https://projects.mcah.columbia.edu/jaanus/record/sanen and
+  https://projects.mcah.columbia.edu/jaanus/node/1715
+- Yohaku, the blank space that weighs as much as the painted.
+  https://projects.mcah.columbia.edu/jaanus/record/yohaku
+- Sesshū: one strong stroke for the cliffs, far peaks drawn on the grey sky with one line,
+  mist dividing solid from void. https://en.wikipedia.org/wiki/Sessh%C5%AB
+- Hasegawa Tōhaku, Pine Trees: near pines dark, far ones pale, blank paper as mist.
+  https://en.wikipedia.org/wiki/Sh%C5%8Drin-zu_by%C5%8Dbu
+- Hokusai, Fine Wind, Clear Morning: a sky of three deepening blues, snow at the summit,
+  the dark forest at the foot. https://en.wikipedia.org/wiki/Fine_Wind,_Clear_Morning
+- Aizuri-e, the all-blue prints of the 1830s. https://en.wikipedia.org/wiki/Aizuri-e
+- Aerial perspective: contrast, saturation and detail fall with distance, hue goes to the
+  sky's blue. https://en.wikipedia.org/wiki/Aerial_perspective
+- The sky's blue and its paling toward the horizon.
+  https://en.wikipedia.org/wiki/Diffuse_sky_radiation
+- Texture strokes of Chinese landscape painting (hemp-fibre and axe-cut), Way and Shih
+  2001. https://diglib.eg.org/handle/10.2312/8856

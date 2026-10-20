@@ -4,6 +4,7 @@
     python3 gallery.py OUT.html [PROGRAM=..] [CONFIG=..]
 """
 
+import curses
 import html
 import random
 import sys
@@ -137,6 +138,38 @@ def render_sky(mod, pieces):
     return "\n".join(out).rstrip("\n")
 
 
+def landscape_html(mod, seed, W=135, H=120):
+    """The landscape of one seed as coloured text, every cell on its own background."""
+    pairs = mod.Pairs(live=False)
+    back = mod.Backdrop(W, H, seed, pairs)
+    rgb = {slot: spec[0] for slot, spec in mod.PALETTE_DAY.items()}
+    out = []
+    for y in range(H):
+        line, run, key = [], [], None
+        for x in range(W):
+            ch, attr = back.chars[y][x], back.attr[y][x]
+            n = (attr & mod.A_COLOR_MASK) >> mod.PAIR_SHIFT
+            fg, bg = pairs.of.get(n, (7, -1))
+            if attr & curses.A_BOLD and fg < 8:
+                fg += 8
+            k = (fg, 0 if bg < 0 else bg)
+            if k != key and run:
+                line.append(cell_span(run, key, rgb))
+                run = []
+            key = k
+            run.append(ch)
+        if run:
+            line.append(cell_span(run, key, rgb))
+        out.append("".join(line))
+    return "\n".join(out)
+
+
+def cell_span(chars, key, rgb):
+    fg, bg = key
+    style = f"color:{rgb[fg]}" + (f";background:{rgb[bg]}" if bg else "")
+    return f'<span style="{style}">{html.escape("".join(chars))}</span>'
+
+
 def card(title, setting, note, body, facts):
     note_html = f'<p class="note">{html.escape(note)}</p>' if note else ""
     return (f'<article class="card"><header><h3>{html.escape(title)}</h3>'
@@ -162,6 +195,7 @@ h3 { font-family: var(--display); font-weight: 700; font-size: 1.25rem; margin: 
 .note { margin: 0; color: var(--muted); max-width: 70ch; }
 .screen { background: var(--screen); border-radius: 4px; overflow-x: auto; padding: 8px 10px; }
 .screen pre { margin: 0; font-family: var(--mono); font-size: 9.5px; line-height: 1.15; color: #aaa; white-space: pre; width: max-content; }
+.screen pre span[style*="background"] { line-height: 1.15; padding: 1px 0; }
 .facts { margin: 0; font-family: var(--mono); font-size: .78rem; color: var(--muted); }
 .key { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--mono); font-size: .8rem; color: var(--muted); margin: 0 0 1rem; }
 """
@@ -181,6 +215,12 @@ def main():
         planters.append(card(title, setting, note, body, report.get("planter", "")))
         print("rendered", title)
     sky = [card(title, "sky = yes", note, render_sky(mod, pieces), where) for title, where, note, pieces in SKY]
+    land = [card(f"The landscape, seed {seed}", "landscape = auto",
+                 "Snowy peaks with hatched shade faces, a far range in haze, wooded hills, the spear mist, the still lake, the framing pines, the black table; drawn once per run from the seed, in blues and greys only." if seed == 1 else "",
+                 landscape_html(mod, seed), f"seed {seed}; the tree grows over the lake, the planter on the table")
+            for seed in (1, 3)]
+    for seed in (1, 3):
+        print("rendered landscape", seed)
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bonsai Forms and Planters</title>
@@ -194,6 +234,9 @@ def main():
 <h2>Sky</h2>
 <p class="note">Clouds drift behind the tree, drawn only where nothing else is, in three greys on the black: real cloud kinds at their real heights (rows as a share of the screen, from the top), one wind for the whole run, a mood per tree (clear, fair, high or misty). Each enters by the upwind edge or forms in place and dissolves, tail first.</p>
 <section class="grid">{"".join(sky)}</section>
+<h2>Landscape</h2>
+<p class="note">The mountain landscape behind the clouds: a blue print behind a coloured tree, painted in RGB, halftoned into ░ ▒ █ over four backgrounds, and inked with ASCII strokes. The console's sixteen colour slots are set to these exact colours where the terminal allows it.</p>
+<section class="grid">{"".join(land)}</section>
 </main></body></html>
 """
     with open(out, "w", encoding="utf-8") as fh:
