@@ -160,6 +160,7 @@ restart. A flag on the command line wins over the file.
 | `bare` | `12` | seconds the bare tree is held before it crumbles (0 to 600) |
 | `crumble` | `20` | seconds the bare tree takes to crumble into the planter (0.5 to 600) |
 | `pile` | `2` | rows the fallen leaves may heap up above the soil, a stand or the table (0 to 20) |
+| `keep` | `0.5` | share of the fallen leaves that stay where they land; the rest vanish (smaller = a slower build-up per tree) (0 to 1) |
 | `trunk_color` | `yellow` | colour of the trunk and branches |
 | `leaf_color` | `green` | colour of the leaves and moss |
 | `pot` | `auto` | the planter: auto (matched to the form), no, or one of drum celadon teizan hexagon oval bunjin |

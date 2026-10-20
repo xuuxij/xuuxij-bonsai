@@ -129,6 +129,8 @@ SETTINGS = {
     "bare":        (12.0, float, 0.0, 600.0, "seconds the bare tree is held before it crumbles"),
     "crumble":     (20.0, float, 0.5, 600.0, "seconds the bare tree takes to crumble into the planter"),
     "pile":        (2, int, 0, 20, "rows the fallen leaves may heap up above the soil, a stand or the table"),
+    "keep":        (0.5, float, 0.0, 1.0, "share of the fallen leaves that stay where they land; the rest vanish "
+                                         "(smaller = a slower build-up per tree)"),
     "trunk_color": ("yellow", "color", None, None, "colour of the trunk and branches"),
     "leaf_color":  ("green", "color", None, None, "colour of the leaves and moss"),
     "pot":         ("auto", "pot", None, None, "the planter: auto (matched to the form), no, or one of "
@@ -1843,11 +1845,13 @@ class Tree:
 
     def settle(self, x, kind, char, attr):
         """Lays a fallen thing at column x, on the ground or on the pile there, by the
-        heap's rules. A leaf meeting the trunk's base rolls off beside it. A pile stays
-        within two rows of its ground, so the planter's rim still shows and the
-        overflow slides off its ends; on the table only one leaf in four stays, the
-        rest fall past its edge."""
+        heap's rules. Only a share of the leaves stay (`keep`); the rest vanish on
+        touching down, and on the table only a quarter of those. A leaf meeting the
+        trunk's base rolls off beside it. A pile stays within `pile` rows of its
+        ground, and the overflow slides off the planter's ends."""
         top = self.surface(x)
+        if kind == "fallen" and self.rng.random() > self.cfg["keep"]:
+            return False
         if top == self.H - 1 and self.rng.random() > 0.25:
             return False
         direction = self.rng.choice((-1, 1))
