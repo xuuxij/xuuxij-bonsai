@@ -190,7 +190,11 @@ second with a gust now and then, and float down swaying, gliding, tumbling as th
 carried by one slow breeze, to settle on the soil, a stand or the table. The bare tree
 is held, then crumbles from the branch tips inward and the trunk from the top down, its
 dust drifting into the planter. The next tree grows out of the same planter; nothing is
-swept, so the carpet piles up a little more with every autumn.
+swept, so the carpet piles up a little more with every autumn. The carpet behaves like a
+heap: a landing leaf falls into any hole under it and slides down a slope until it rests
+on something, piles stay within two rows of their ground and the overflow slides off the
+planter's ends, and after each crumble whatever was resting on the trunk falls or slides
+until the heap is stable.
 
 **The clock.** With `cycle` set, every tree gets exactly that long from its first cell to
 the next tree's first cell: the growing takes a quarter of it at a step chosen for that
@@ -221,6 +225,9 @@ on a virtual clock, so a ten-minute tree renders in a moment.
   timing against the clock.
 - `gallery.py OUT.html` renders every form and planter in the console's colours and
   builds the gallery page.
+- `heap_check.py SEED [TREES]` grows trees in a row in one planter and checks the
+  carpet of leaves obeys the heap's rules (nothing resting on air, no slope steeper
+  than a cell a row, piles within their height), after each fall and each crumble.
 
 To check the real thing, run it in a detached tmux of the console's size and capture the
 pane: `tmux -L t -f /dev/null new-session -d -x 135 -y 120 "xuuxij-bonsai --seed 1"`,

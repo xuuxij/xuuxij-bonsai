@@ -87,7 +87,9 @@ MARGIN = 10           # columns kept clear at each side of the composition on a 
 DESIGN_ROWS = 60      # the tree height the proportions were designed at; smaller trees scale down
 SMALLEST = (20, 30)   # rows, columns: below this no tree is drawn, only a word
 TICK = 0.08           # seconds per step of the falling leaves and the dust
-DEBRIS_HOLD = 9.0     # seconds the dust lies in the planter before the soil is swept
+DEBRIS_HOLD = 9.0     # seconds the dust lies in the planter before the next tree
+PILE_ROWS = 2         # how far a heap of leaves may rise above its ground
+AVALANCHE = 3.0       # seconds allowed in a timed cycle for the heap to settle after the crumble
 
 
 # ---- the planters ------------------------------------------------------------------
@@ -617,7 +619,6 @@ class Tree:
             self.translate((self.W - 1 - lo - hi) // 2)
         lo, hi = self.composition_box()
         self.report["composition"] = f"columns {lo} to {hi} (centre {(lo + hi) / 2:.1f} of {(self.W - 1) / 2})"
-        self.table_count = sum(1 for (y, x), e in self.grid.items() if y == self.H - 1 and e[0] in ("fallen", "dust"))
 
     def planter_spec(self):
         """What the next tree needs to grow in this planter."""
@@ -691,8 +692,7 @@ class Tree:
         self.strokes, self.wood, self.trunk_rows = [], {}, {}
         self.families, self.clouds = [], 0
         self.pot_rows, self.pot_spec, self.rim, self.stand_span, self.stand_top = [], None, None, None, None
-        self.blocked = set()
-        self.table_room = self.W // 2
+        self.blocked, self.pot_cols = set(), set()
         B = self.base
         if self.style == "kengai":
             self.plan_kengai(shrink)
@@ -1312,14 +1312,14 @@ class Tree:
         soil_text, soil_paint = rows[1]
         gravel = [k for k, p in enumerate(soil_paint) if p in "gm"]
         self.rim = (x0 + gravel[0], x0 + gravel[-1]) if gravel else None
+        # The columns the planter's rim and soil rows occupy: a leaf over them lands on
+        # the planter; beside them, under a curved shoulder, it falls to the table.
+        self.pot_cols = {x0 + k for text, paint in rows[:2] for k, p in enumerate(paint) if p != " "}
         self.pot_spec = (self.pot_kind, width, self.stand_kind, stand_w)
         y_top = self.H - len(block)
         # Nothing of the tree is drawn inside the planter's or the stand's outline.
         self.blocked = {(y_top + i, bx0 + k) for i, (bx0, text, paint, _st) in enumerate(block)
                         for k in range(len(text)) if i > 0}
-        last_x0, last_text, last_paint, _s = block[-1]
-        covered = sum(1 for p in last_paint if p != " ")
-        self.table_room = (self.W - covered) // 2  # the table's first row carpets at most half
 
     def composition_box(self):
         xs = [x + k for s in self.strokes for y, x, text, _a in s.cells for k in range(len(text))]
@@ -1330,7 +1330,8 @@ class Tree:
         return (min(xs), max(xs)) if xs else (self.cx, self.cx)
 
     def translate(self, dx):
-        """Moves everything planned `dx` columns."""
+        """Moves the tree `dx` columns, and the planter with it unless the planter is
+        the one already standing on the screen."""
         if dx == 0:
             return
         for s in self.strokes:
@@ -1341,13 +1342,16 @@ class Tree:
         self.trunk_path = {y: x + dx for y, x in self.trunk_path.items()}
         if hasattr(self, "twin_path"):
             self.twin_path = {y: x + dx for y, x in self.twin_path.items()}
+        self.cx += dx
+        if self.planter:
+            return
         self.pot_rows = [(x0 + dx, text, paint, st) for x0, text, paint, st in self.pot_rows]
         self.blocked = {(y, x + dx) for y, x in self.blocked}
+        self.pot_cols = {x + dx for x in self.pot_cols}
         if self.rim:
             self.rim = (self.rim[0] + dx, self.rim[1] + dx)
         if self.stand_span:
             self.stand_span = (self.stand_span[0] + dx, self.stand_span[1] + dx)
-        self.cx += dx
 
     def draw_pot(self, top_only=False):
         """Draws the planter and its stand from their rows and paint; `top_only`
@@ -1426,7 +1430,7 @@ class Tree:
         units = max(1.0, self.growth_units())
         step = max(0.03, min(0.4, GROW_SHARE * cycle / units))
         grow = step * units
-        crumble_at = t_start + cycle - (cfg["crumble"] + 4 + DEBRIS_HOLD)
+        crumble_at = t_start + cycle - (cfg["crumble"] + 4 + AVALANCHE + DEBRIS_HOLD)
         fall = (crumble_at - t_start) - grow - cfg["wait"] - cfg["autumn"] - LANDING_TAIL - BARE_TARGET
         self.cfg = dict(cfg, step=step, fall=max(60.0, fall))
         self.report["tempo"] = f"step {step:.3f} s, growing {grow:.0f} s, letting go over {self.cfg['fall']:.0f} s"
@@ -1529,41 +1533,125 @@ class Tree:
         return None
 
     def surface(self, x):
-        """The row a falling thing settles on at column x: the soil inside the rim, a
-        stand's top, or the table at the bottom of the screen."""
-        if self.rim and self.rim[0] <= x <= self.rim[1]:
+        """The ground a falling thing reaches at column x: the planter's soil row over
+        the planter, a stand's top beside it, or the table at the bottom of the screen."""
+        if x in self.pot_cols:
             return self.base
         if self.stand_span and self.stand_span[0] <= x <= self.stand_span[1]:
             return self.stand_top - 1
         return self.H - 1
 
+    # The carpet behaves like a heap of leaves: a leaf falls into any hole under it,
+    # slides down a slope until it rests on something, and the piles stay at most a
+    # few rows high. "Passable" is where a leaf may lie: an empty cell, gravel, or the
+    # far rim, which stands behind the pile.
+
+    def passable(self, cell):
+        y, x = cell
+        if not (0 <= y < self.H and 0 <= x < self.W):
+            return False
+        entry = self.grid.get(cell)
+        return entry is None or entry[0] == "soil" or (y == self.base - 1 and entry[0] == "pot")
+
+    def is_carpet(self, cell):
+        entry = self.grid.get(cell)
+        return entry is not None and entry[0] in ("fallen", "dust")
+
+    def land(self, y, x):
+        """Where a leaf arriving at (y, x) comes to rest: it falls while there is
+        nothing under it, slides down a slope while a lower cell beside it is free,
+        and climbs over leaves already lying there. Returns the cell, or None."""
+        rng = self.rng
+        for _step in range(200):
+            if y >= self.H - 1 and not self.passable((y, x)):
+                return None
+            if y + 1 < self.H and self.passable((y + 1, x)) and not self.is_carpet((y + 1, x)):
+                y += 1  # nothing under it: it falls
+                continue
+            if self.passable((y, x)):
+                sides = [-1, 1]
+                rng.shuffle(sides)
+                for dx in sides:  # a free lower cell beside it: it slides
+                    nx = x + dx
+                    if (self.passable((y, nx)) and y + 1 < self.H and self.passable((y + 1, nx))
+                            and not self.is_carpet((y + 1, nx))):
+                        y, x = y + 1, nx
+                        break
+                else:
+                    return (y, x)
+                continue
+            if self.is_carpet((y, x)):
+                y -= 1  # leaves lie here: it comes to rest higher up
+                if y < 0:
+                    return None
+                continue
+            return None  # something solid
+
     def settle(self, x, kind, char, attr):
-        """Lays a fallen thing on its surface at column x, or on the pile there: a cell
-        is taken only when the one under it already holds a leaf or dust, so the piles
-        grow from the ground up, three rows at most on the soil (the second in front
-        of the far rim), two on a stand or the table. On the table only one leaf in
-        four stays, until half of its first row is covered; the rest fall past its
-        edge. False when there is no room."""
+        """Lays a fallen thing at column x, on the ground or on the pile there, by the
+        heap's rules. A leaf meeting the trunk's base rolls off beside it. A pile stays
+        within two rows of its ground, so the planter's rim still shows and the
+        overflow slides off its ends; on the table only one leaf in four stays, the
+        rest fall past its edge."""
         top = self.surface(x)
         if top == self.H - 1 and self.rng.random() > 0.25:
             return False
-        depth = 4 if top == self.base else 3
-        for y in range(top, top - depth, -1):
-            entry = self.grid.get((y, x))
-            below = self.grid.get((y + 1, x)) if y < top else None
-            if y < top and (below is None or below[0] not in ("fallen", "dust")):
-                return False  # nothing to pile on
-            if entry is None or entry[0] == "soil" or (y == self.base - 1 and entry[0] == "pot"):
-                if y == top == self.H - 1:
-                    if self.table_count >= self.table_room:
-                        return False
-                    self.table_count += 1
-                self.grid[(y, x)] = (kind, char, attr, entry)
-                self.put(y, x, char, attr)
-                return True
-            if entry[0] not in ("fallen", "dust"):
-                return False  # something solid: nothing piles on it
-        return False
+        direction = self.rng.choice((-1, 1))
+        for k in range(0, 9):  # off the trunk's base, to the nearest free column
+            nx = x + direction * k
+            if 0 <= nx < self.W and (self.passable((top, nx)) or self.is_carpet((top, nx))):
+                x = nx
+                break
+            nx = x - direction * k
+            if 0 <= nx < self.W and (self.passable((top, nx)) or self.is_carpet((top, nx))):
+                x = nx
+                break
+        else:
+            return False
+        spot = self.land(top, x)
+        if spot is None:
+            return False
+        y, x = spot
+        if y < self.surface(x) - PILE_ROWS:
+            return False  # the pile is as high as it gets
+        entry = self.grid.get((y, x))
+        self.grid[(y, x)] = (kind, char, attr, entry)
+        self.put(y, x, char, attr)
+        return True
+
+    def collapse(self):
+        """After the ground under the carpet has changed, every leaf or grain of dust
+        with nothing under it, or with a free lower cell beside it, falls or slides
+        until the heap is stable: a small avalanche, drawn as it goes. Returns 'key' or
+        'resize' if interrupted, else None."""
+        t = time.monotonic()
+        for _pass in range(12):
+            cells = sorted((c for c in self.grid if self.is_carpet(c)), key=lambda c: (-c[0], self.rng.random()))
+            moved = 0
+            for y, x in cells:
+                loose = (self.passable((y + 1, x)) and not self.is_carpet((y + 1, x))) or any(
+                    self.passable((y, x + dx)) and self.passable((y + 1, x + dx)) and not self.is_carpet((y + 1, x + dx))
+                    for dx in (-1, 1))
+                if not loose:
+                    continue
+                kind, char, attr, under = self.grid.pop((y, x))
+                if under is not None:
+                    self.grid[(y, x)] = under
+                self.restore((y, x))
+                spot = self.land(y, x)
+                if spot is not None and spot != (y, x):
+                    entry = self.grid.get(spot)
+                    self.grid[spot] = (kind, char, attr, entry)
+                    self.put(spot[0], spot[1], char, attr)
+                moved += 1
+                if moved % 3 == 0:
+                    t += TICK / 2
+                    outcome = self.sleep_until(t)
+                    if outcome:
+                        return outcome
+            if not moved:
+                break
+        return None
 
     def autumn(self):
         """The leaves change colour over `autumn` seconds, the top pad first and the
@@ -1716,7 +1804,10 @@ class Tree:
             outcome = self.sleep_until(t)
             if outcome:
                 return outcome
-        outcome = self.sleep_until(t + DEBRIS_HOLD)
+        outcome = self.collapse()  # the heap settles into the space the trunk left
+        if outcome:
+            return outcome
+        outcome = self.sleep_until(time.monotonic() + DEBRIS_HOLD)
         if outcome:
             return outcome
         self.draw_pot(top_only=True)  # the rim and the gravel the trunk stood over come back
