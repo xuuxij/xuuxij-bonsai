@@ -908,14 +908,14 @@ PALETTE_DAY = {
     4:  ("#050505", "deep sky, zenith (bg); the oval pot's glaze"),
     5:  ("#090909", "mid sky (bg)"),
     6:  ("#0e0e0e", "pale sky at the horizon, mist, far lake (bg); the celadon pot"),
-    7:  ("#8c8c88", "cloud bodies g, gravel"),
-    8:  ("#4a4a48", "cloud bases d, far clouds, shadows"),
+    7:  ("#383836", "cloud bodies g, gravel"),
+    8:  ("#1a1a19", "cloud bases d, far clouds, shadows"),
     9:  ("#d33a1e", "autumn red leaves (tree only)"),
     10: ("#3db04a", "leaves lit, buds (tree only)"),
     11: ("#cf8f1c", "growing tip, autumn yellow leaves (tree only)"),
     12: ("#020202", "slate: pines, shore, forest, tree tops, gullies (the landscape's ink); oval pot pattern"),
-    13: ("#fbfbf8", "cloud tops W (the clouds' own slot)"),
-    14: ("#d2d2ce", "free; the celadon pot's highlight"),
+    13: ("#6a6a69", "cloud tops W (the clouds' own slot)"),
+    14: ("#585856", "free; the celadon pot's highlight"),
     15: ("#e0e0e0", "bright white: the planters' highlights"),
 }
 # The same slots at other hours (round 2 material: swapped at a tree boundary by the clock).
