@@ -893,32 +893,32 @@ PALETTE_DAY = {
     1:  ("#9c4a30", "rosewood stand, Teizan red clay (planter only)"),
     2:  ("#1f6d2b", "leaves shaded (tree only)"),
     3:  ("#4f3014", "trunk, branches, Teizan trim (tree only; unchanged)"),
-    4:  ("#0f0f0f", "deep sky, zenith (bg); the oval pot's glaze"),
-    5:  ("#161717", "mid sky (bg)"),
-    6:  ("#1f1f1f", "pale sky at the horizon, mist, far lake (bg); the celadon pot"),
-    7:  ("#252525", "soft white: cloud bodies g, snow in shade, gravel"),
-    8:  ("#151515", "grey-blue: cloud bases d, rock, tree shadow"),
+    4:  ("#050505", "deep sky, zenith (bg); the oval pot's glaze"),
+    5:  ("#090909", "mid sky (bg)"),
+    6:  ("#0e0e0e", "pale sky at the horizon, mist, far lake (bg); the celadon pot"),
+    7:  ("#121212", "soft white: cloud bodies g, snow in shade, gravel"),
+    8:  ("#080808", "grey-blue: cloud bases d, rock, tree shadow"),
     9:  ("#d33a1e", "autumn red leaves (tree only)"),
     10: ("#3db04a", "leaves lit, buds (tree only)"),
     11: ("#cf8f1c", "growing tip, autumn yellow leaves (tree only)"),
-    12: ("#060606", "slate: pines, shore, forest, tree tops, gullies (the landscape's ink); oval pot pattern"),
-    13: ("#181818", "haze: the far range (the free 'bright magenta' slot)"),
-    14: ("#232323", "ice: bright mist, snow in shade; celadon highlight"),
-    15: ("#2b2b2b", "bright white: cloud tops W, sunlit snow"),
+    12: ("#020202", "slate: pines, shore, forest, tree tops, gullies (the landscape's ink); oval pot pattern"),
+    13: ("#0a0a0a", "haze: the far range (the free 'bright magenta' slot)"),
+    14: ("#111111", "ice: bright mist, snow in shade; celadon highlight"),
+    15: ("#161616", "bright white: cloud tops W, sunlit snow"),
 }
 # The same slots at other hours (round 2 material: swapped at a tree boundary by the clock).
 PALETTE_EVENING = {**PALETTE_DAY, **{
-    4: ("#0c0d0d", ""), 5: ("#151515", ""), 6: ("#1d1d1d", ""), 7: ("#232322", ""),
-    8: ("#131313", ""), 12: ("#060606", ""), 13: ("#171717", ""), 14: ("#212121", ""),
-    15: ("#282828", "")}}
+    4: ("#040404", ""), 5: ("#080808", ""), 6: ("#0d0d0d", ""), 7: ("#111110", ""),
+    8: ("#070707", ""), 12: ("#020202", ""), 13: ("#090909", ""), 14: ("#101010", ""),
+    15: ("#141414", "")}}
 PALETTE_NIGHT = {**PALETTE_DAY, **{
-    4: ("#020202", ""), 5: ("#030303", ""), 6: ("#060606", ""), 7: ("#171718", ""),
-    8: ("#0a0b0b", ""), 12: ("#020202", ""), 13: ("#090909", ""), 14: ("#131314", ""),
-    15: ("#222222", "")}}
+    4: ("#010101", ""), 5: ("#010101", ""), 6: ("#020202", ""), 7: ("#09090a", ""),
+    8: ("#030404", ""), 12: ("#010101", ""), 13: ("#030303", ""), 14: ("#070708", ""),
+    15: ("#101010", "")}}
 PALETTE_DAWN = {**PALETTE_DAY, **{
-    4: ("#111112", ""), 5: ("#191919", ""), 6: ("#212121", ""), 7: ("#262626", ""),
-    8: ("#161616", ""), 12: ("#080808", ""), 13: ("#1a1a1a", ""), 14: ("#242525", ""),
-    15: ("#2b2b2b", "")}}
+    4: ("#060607", ""), 5: ("#0b0b0b", ""), 6: ("#101010", ""), 7: ("#131313", ""),
+    8: ("#090909", ""), 12: ("#030303", ""), 13: ("#0b0b0b", ""), 14: ("#121212", ""),
+    15: ("#161616", "")}}
 PALETTES = {"day": PALETTE_DAY, "dawn": PALETTE_DAWN, "evening": PALETTE_EVENING,
             "night": PALETTE_NIGHT}
 # The clock (round 2): night 21:00-05:59, dawn 06:00-07:59, day 08:00-16:59, evening
@@ -1102,20 +1102,20 @@ def land_profiles(rng, W, H, L, noise):
 
 # ---- paint ---------------------------------------------------------------------------------
 
-SKY_STOPS = [(0.00, "#0f0f0f"), (0.17, "#161717"), (0.34, "#1f1f1f")]
-C_SNOW_LIT, C_SNOW_SHADE = hex_rgb("#2a2a2a"), hex_rgb("#212122")
-C_ROCK_LIT, C_ROCK_SHADE = hex_rgb("#1b1b1b"), hex_rgb("#131313")
-C_RIB, C_FOREST = hex_rgb("#0c0c0c"), hex_rgb("#090909")
+SKY_STOPS = [(0.00, "#050505"), (0.17, "#090909"), (0.34, "#0e0e0e")]
+C_SNOW_LIT, C_SNOW_SHADE = hex_rgb("#151515"), hex_rgb("#101010")
+C_ROCK_LIT, C_ROCK_SHADE = hex_rgb("#0c0c0c"), hex_rgb("#070707")
+C_RIB, C_FOREST = hex_rgb("#040404"), hex_rgb("#030303")
 # Round 2: the shade tones a step lighter (sky-lit snow and rock are blue-grey, not navy),
 # so a shade face halftones to d on p / d on b mixes and is no longer the heaviest shape.
-C_HAZE = hex_rgb("#181818")
-C_MIST = hex_rgb("#222222")
-C_LAKE_FAR, C_LAKE_NEAR = hex_rgb("#1f1f1f"), hex_rgb("#1b1b1b")
-C_HILL, C_HILL_EDGE = hex_rgb("#080808"), hex_rgb("#0b0b0c")
+C_HAZE = hex_rgb("#0a0a0a")
+C_MIST = hex_rgb("#101010")
+C_LAKE_FAR, C_LAKE_NEAR = hex_rgb("#0e0e0e"), hex_rgb("#0c0c0c")
+C_HILL, C_HILL_EDGE = hex_rgb("#030303"), hex_rgb("#040404")
 # These greys sit nearer the grey mixes (d on k, d on B, k on b) than the solid deep blue,
 # so shaded rock halftones as grey-blue texture and never as a flat patch of sky blue.
-C_REFLECT = hex_rgb("#151515")
-C_SHORE, C_SHORE_TOP = hex_rgb("#060606"), hex_rgb("#090909")
+C_REFLECT = hex_rgb("#080808")
+C_SHORE, C_SHORE_TOP = hex_rgb("#020202"), hex_rgb("#030303")
 
 
 def sky_colour(v):
@@ -1176,7 +1176,7 @@ def land_paint(rng, W, H, L, P, noise):
             # the far range, in haze, fading into the pale sky toward its feet
             if y * 2 >= yC[x]:
                 t = clamp((y - yC[x] / 2) / max(1.0, (mist_top - yC[x] / 2)))
-                col = lerp(C_HAZE, hex_rgb("#1f1f1f"), 0.3 + 0.7 * t * t)
+                col = lerp(C_HAZE, hex_rgb("#0e0e0e"), 0.3 + 0.7 * t * t)
                 lay = "C"
             # the main range
             if y * 2 >= yB[x]:
