@@ -235,13 +235,17 @@ trunk. Each tree's sky has a mood (clear, fair, high or misty), there is one win
 whole run, which the leaf-fall's gusts mostly follow, and a cloud enters by the upwind
 edge or forms in place and dissolves, tail first. `sky = no` leaves the sky black.
 
-**The landscape.** Behind the clouds, a mountain landscape in blues and greys only, the
+**The landscape.** Behind the clouds, a mountain landscape in quiet blue-greys only, the
 way the Edo *aizuri-e* were printed in blue so that the bonsai is the one thing in colour:
 a sky deepening from the horizon to the zenith, snowy peaks with hatched shade faces and
 gullies, a far range dissolving in haze, wooded hills at the sides, a band of spear mist
 hiding the mountains' feet, a still pale lake filling the middle of the screen as the
-tree's own ground, two black pines framing the edges, and the black table the planter was
-designed on. It is made in three passes: the scene is painted in RGB per cell, halftoned
+tree's own ground, two slate pines framing the edges, and the black table the planter was
+designed on. Its values are kept close together and its marks few, so the tree is the one
+strong thing: the trunk's inside is drawn on black as an ink mass with bark lines at its
+edges, each cloud of foliage has a lit cap, a green body and a dark underside, the
+planters' bodies are filled, and every stroke of the tree keeps a one-cell margin of plain
+ground around it (the landscape's texture gives way there, its own ink does not). It is made in three passes: the scene is painted in RGB per cell, halftoned
 to the nearest mix the console can show (a shade character ░ ▒ █ in one colour over one of
 four backgrounds, with an ordered dither, so gradations are dotted like a print's
 *bokashi*), then drawn over with ASCII strokes for ridge lines, hatching, tree tops and

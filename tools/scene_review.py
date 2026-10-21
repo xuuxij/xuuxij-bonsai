@@ -23,12 +23,17 @@ BOLD = curses.A_BOLD
 
 def main():
     argv = sys.argv[1:]
-    at = None
+    at, core = None, None
     for item in list(argv):
         if item.startswith("AT="):
             at = [float(v) for v in item[3:].split(",")]
             argv.remove(item)
+        elif item.startswith("CORE="):  # the trunk's inside: ink (black) or shade (▒)
+            core = item[5:]
+            argv.remove(item)
     mod, cfg, rest = setup(argv)
+    if core:
+        mod.TRUNK_CORE = core
     outdir = rest[0]
     seed = int(rest[1]) if len(rest) > 1 else 1
     trees = int(rest[2]) if len(rest) > 2 else 1

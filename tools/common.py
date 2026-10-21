@@ -90,14 +90,14 @@ def virtual_clock(mod):
 def plain_attrs(mod, cfg):
     """Attributes the tools can read back: one number per part."""
     return {"color": {name: 6 for name in mod.COLORS}, "wood": 1, "tip": 2 if cfg["highlight"] else 1,
-            "leaf": (3, 4), "bud": 5, "moss": 7, "gravel": 6, "shadow": 6, "stand": 6, "turn": [8, 9]}
+            "leaf": (3, 4), "leaf_under": 3, "bud": 5, "moss": 7, "gravel": 6, "shadow": 6, "stand": 6, "turn": [8, 9]}
 
 
 def colour_attrs(mod, cfg):
     """Attributes that carry the console colour: 10 + the colour's number, plus bold."""
     color = {name: 10 + i for i, name in enumerate(mod.COLORS)}
     wood, leaf = color[cfg["trunk_color"]], color[cfg["leaf_color"]]
-    return {"color": color, "wood": wood, "tip": wood | BOLD, "leaf": (leaf, leaf | BOLD), "bud": leaf,
+    return {"color": color, "wood": wood, "tip": wood | BOLD, "leaf": (leaf, leaf | BOLD), "leaf_under": color["black"], "bud": leaf,
             "moss": leaf, "gravel": color["white"], "shadow": color["black"] | BOLD,
             "stand": color[cfg["stand_color"]],
             "turn": [color[n] | BOLD for n in cfg["autumn_colors"].split()]}

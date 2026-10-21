@@ -79,7 +79,8 @@ PAIRS = None        # made by make_attrs
 PALETTE_WAY = None  # how the console's palette was set: "linux", "curses" or None
 
 STYLES = ("moyogi", "chokkan", "shakan", "bunjin", "kengai")
-LEAF_SETS = (("&*", 65), ("*^", 35))
+LEAF_SETS = (("&*", 75), ("*^", 25))
+TRUNK_CORE = "ink"  # a trunk three or more wide: its inside on black ("ink") or shaded ▒ ("shade")
 
 # ---- the forms, as numbers ---------------------------------------------------------------
 # Each built-in form is a set of numbers; a user's own form (a file in ~/.config/
@@ -90,7 +91,7 @@ FORMS = {
     "moyogi": {
         "height": (0.55, 0.65),        # of the rows above the soil
         "spread": (0.60, 0.80),        # of the width budget
-        "trunk_width": ("by_height", 8.0, 6, 9),  # rows / 8, kept between 6 and 9
+        "trunk_width": ("by_height", 7.0, 7, 10),  # rows / 7, kept between 7 and 10
         "line": "s-curve",             # the trunk's line: s-curve, straight, lean or literati
         "movement": (8, 14),           # columns the s-curve or literati trunk swings
         "apex": (-6, 6),               # columns the apex ends from the base
@@ -107,14 +108,14 @@ FORMS = {
         "roots": ("__/", "\\__"),
     },
     "chokkan": {
-        "height": 0.60, "spread": (0.65, 0.75), "trunk_width": ("by_height", 7.5, 8, 9),
+        "height": 0.60, "spread": (0.65, 0.75), "trunk_width": ("by_height", 7.0, 8, 10),
         "line": "straight", "movement": 0, "apex": 0, "branches": (4, 6), "first_branch": 0.33,
         "first_side": "either", "profile": "chokkan", "branch_length": "by_spread", "twigs": 1,
         "pads": "by_branch", "apex_pad": 1.0, "back_pad": True, "planting": (0.48, "left"),
         "roots": ("__/", "\\__"),
     },
     "shakan": {
-        "height": 0.55, "spread": (0.55, 0.65), "trunk_width": ("by_height", 9.0, 6, 7),
+        "height": 0.55, "spread": (0.55, 0.65), "trunk_width": ("by_height", 8.0, 7, 8),
         "line": "lean", "lean": (0.35, 0.55), "bow": (3, 6), "branches": (3, 4), "first_branch": 0.38,
         "first_side": "away", "profile": "shakan", "branch_length": "by_spread", "twigs": 1,
         "pads": "by_branch", "apex_pad": 1.0, "back_pad": True, "planting": (0.38, "away_from_lean"),
@@ -150,7 +151,7 @@ SETTINGS = {
     "twin":        ("auto", "twin", None, None, "a twin trunk: auto (a fifth of the uprights and slanting trees), yes or no"),
     "height":      (0.60, float, 0.1, 1.0, "the height budget: each form's height scales with it (0.6 = as designed)"),
     "width":       (0.75, float, 0.1, 1.0, "the width budget: each form's spread scales with it (0.75 = as designed)"),
-    "leafiness":   (1.0, float, 0.3, 3.0, "size of the clouds of foliage"),
+    "leafiness":   (1.1, float, 0.3, 3.0, "size of the clouds of foliage"),
     "leaves":      ("auto", "leaves", None, None, "characters inside a cloud of foliage: auto (drawn per tree: "
                                                   "&* broadleaf or *^ needles), or your own"),
     "leaf_edge":   (".,'", str, None, None, "characters around a cloud's edge"),
@@ -368,7 +369,7 @@ def stand_rows(W, stand):
     that hangs beside it."""
     n = W - 2
     legs = [row([("|", "b"), (" " * n, " "), ("|", "b")])] * STAND_LEGS[stand]
-    return [
+    return fill_body([
         row([(" ", " "), ("_" * n, "B"), (" ", " ")]),
         row([("|", "b"), ("_" * n, "b"), ("|", "b")]),
         row([("|", "b"), (run(n, "  ___ ", "", " "), "b"), ("|", "b")]),
@@ -376,7 +377,7 @@ def stand_rows(W, stand):
     ] + legs + [
         row([("(_/", "b"), ("_" * (W - 6), "b"), ("\\_)", "b")]),
         shadow(W, 0),
-    ]
+    ], "░")
 
 
 # name: (rows, share of the canopy's spread, (body colour, trim colour))
@@ -395,12 +396,38 @@ def has_shadow(rows):
     return all(p in "s " for p in rows[-1][1])
 
 
+def fill_body(rows, fill):
+    """A planter or stand with its body filled: every blank inside the silhouette of a
+    body row becomes `fill` in the body colour; the rim and soil rows, the feet row
+    and open rows (a stand's legs) stay as drawn; the cast shadow goes dotted."""
+    n = len(rows)
+    shadow_at = n - 1 if rows and has_shadow(rows) else None
+    feet_at = shadow_at - 1 if shadow_at is not None else n - 1
+    out = []
+    for i, (text, paint) in enumerate(rows):
+        if i < 2 or i == feet_at:
+            out.append((text, paint))
+        elif i == shadow_at:
+            out.append((text.replace("-", "▒"), paint))
+        else:
+            inked = [k for k, ch in enumerate(text) if ch != " "]
+            a, b = (inked[0], inked[-1]) if inked else (0, -1)
+            inside = text[a + 1:b]
+            if not inside.strip():  # open: a stand's legs
+                out.append((text, paint))
+                continue
+            text = text[:a + 1] + inside.replace(" ", fill) + text[b:]
+            paint = paint[:a + 1] + "".join("b" if ch == " " else p for ch, p in zip(inside, paint[a + 1:b])) + paint[b:]
+            out.append((text, paint))
+    return out
+
+
 def pot_rows_for(kind, W):
-    """A planter's rows at width W: a built-in design stretched to it, a user's own as
-    drawn."""
+    """A planter's rows at width W: a built-in design stretched to it and filled, a
+    user's own as drawn."""
     if kind in USER_POTS:
         return list(USER_POTS[kind][0])
-    return POTS[kind][0](W)
+    return fill_body(POTS[kind][0](W), "▒")
 
 
 def pot_palette(kind):
@@ -803,7 +830,7 @@ def make_attrs(cfg, live=True):
     return {"color": color,
             "wood": wood,
             "tip": wood | curses.A_BOLD if cfg["highlight"] else wood,
-            "leaf": (leaf, leaf | curses.A_BOLD), "bud": leaf, "moss": leaf,
+            "leaf": (leaf, leaf | curses.A_BOLD), "leaf_under": color["black"], "bud": leaf, "moss": leaf,
             "gravel": color["white"], "shadow": color["black"] | curses.A_BOLD,
             "stand": color[cfg["stand_color"]],
             "turn": [color[name] | curses.A_BOLD for name in cfg["autumn_colors"].split()],
@@ -863,35 +890,35 @@ def gentle_path(points, lo, hi, limit=2):
 # 16-slot palette is in one place; the landscape only draws with the slots in LETTERS.
 PALETTE_DAY = {
     0:  ("#000000", "the console; the table under the planter; pines, forest, deepest shade"),
-    1:  ("#8a3324", "rosewood stand, Teizan red clay (planter only)"),
-    2:  ("#2f8f3e", "leaves shaded (tree only)"),
-    3:  ("#784c20", "trunk, branches, Teizan trim (tree only; unchanged)"),
-    4:  ("#2c5c9e", "deep sky, zenith (bg); the oval pot's glaze"),
-    5:  ("#5b8ec8", "mid sky (bg)"),
-    6:  ("#a8c4db", "pale sky at the horizon, mist, far lake (bg); the celadon pot"),
-    7:  ("#d5dbe0", "soft white: cloud bodies g, snow in shade, gravel"),
-    8:  ("#7b8b9b", "grey-blue: cloud bases d, rock, tree shadow"),
-    9:  ("#e0452b", "autumn red leaves (tree only)"),
-    10: ("#52c95a", "leaves lit, buds (tree only)"),
-    11: ("#f2d33c", "growing tip, autumn yellow leaves (tree only)"),
-    12: ("#4a7ab3", "steel blue: the lake near the viewer, shadowed snow; oval pot highlight"),
-    13: ("#8ea7c3", "haze: the far range (the free 'bright magenta' slot)"),
-    14: ("#c6d8e7", "ice: bright mist, snow in shade; celadon highlight"),
-    15: ("#f6f8fa", "bright white: cloud tops W, sunlit snow"),
+    1:  ("#9c4a30", "rosewood stand, Teizan red clay (planter only)"),
+    2:  ("#1f6d2b", "leaves shaded (tree only)"),
+    3:  ("#4f3014", "trunk, branches, Teizan trim (tree only; unchanged)"),
+    4:  ("#5c7190", "deep sky, zenith (bg); the oval pot's glaze"),
+    5:  ("#8092a8", "mid sky (bg)"),
+    6:  ("#a9b5c1", "pale sky at the horizon, mist, far lake (bg); the celadon pot"),
+    7:  ("#c9d0d6", "soft white: cloud bodies g, snow in shade, gravel"),
+    8:  ("#7f8b97", "grey-blue: cloud bases d, rock, tree shadow"),
+    9:  ("#d33a1e", "autumn red leaves (tree only)"),
+    10: ("#3db04a", "leaves lit, buds (tree only)"),
+    11: ("#cf8f1c", "growing tip, autumn yellow leaves (tree only)"),
+    12: ("#3b4757", "slate: pines, shore, forest, tree tops, gullies (the landscape's ink); oval pot pattern"),
+    13: ("#8d99a8", "haze: the far range (the free 'bright magenta' slot)"),
+    14: ("#bfc8d1", "ice: bright mist, snow in shade; celadon highlight"),
+    15: ("#e4e8ec", "bright white: cloud tops W, sunlit snow"),
 }
 # The same slots at other hours (round 2 material: swapped at a tree boundary by the clock).
 PALETTE_EVENING = {**PALETTE_DAY, **{
-    4: ("#2f4f86", ""), 5: ("#6a85b5", ""), 6: ("#c9bcb4", ""), 7: ("#dccfc8", ""),
-    8: ("#767a8e", ""), 12: ("#4e6a9a", ""), 13: ("#a0919f", ""), 14: ("#e3c9c2", ""),
-    15: ("#f9e4d4", "")}}
+    4: ("#5a657e", ""), 5: ("#86899c", ""), 6: ("#b3aba6", ""), 7: ("#cbc2bd", ""),
+    8: ("#7f818c", ""), 12: ("#3f4553", ""), 13: ("#948e96", ""), 14: ("#c7bab5", ""),
+    15: ("#e8d8cc", "")}}
 PALETTE_NIGHT = {**PALETTE_DAY, **{
-    4: ("#0b1a33", ""), 5: ("#15294d", ""), 6: ("#2c4468", ""), 7: ("#8e9ab0", ""),
-    8: ("#4b5a70", ""), 12: ("#1d3a62", ""), 13: ("#3d5478", ""), 14: ("#6f88a8", ""),
-    15: ("#c9d6ea", "")}}
+    4: ("#1a2230", ""), 5: ("#27303f", ""), 6: ("#3e4858", ""), 7: ("#8a94a4", ""),
+    8: ("#545d6a", ""), 12: ("#232b37", ""), 13: ("#4b5563", ""), 14: ("#76829a", ""),
+    15: ("#b7c1cf", "")}}
 PALETTE_DAWN = {**PALETTE_DAY, **{
-    4: ("#335f9b", ""), 5: ("#7196c5", ""), 6: ("#c5cfd8", ""), 7: ("#e0e0e2", ""),
-    8: ("#8691a0", ""), 12: ("#5c7fae", ""), 13: ("#a3b0c0", ""), 14: ("#d9dfe6", ""),
-    15: ("#fbf6f2", "")}}
+    4: ("#6a7a90", ""), 5: ("#8c9bae", ""), 6: ("#b4bcc6", ""), 7: ("#d2d4d8", ""),
+    8: ("#858d98", ""), 12: ("#46505e", ""), 13: ("#98a1ad", ""), 14: ("#c7ccd3", ""),
+    15: ("#ece9e6", "")}}
 PALETTES = {"day": PALETTE_DAY, "dawn": PALETTE_DAWN, "evening": PALETTE_EVENING,
             "night": PALETTE_NIGHT}
 # The clock (round 2): night 21:00-05:59, dawn 06:00-07:59, day 08:00-16:59, evening
@@ -1075,20 +1102,20 @@ def land_profiles(rng, W, H, L, noise):
 
 # ---- paint ---------------------------------------------------------------------------------
 
-SKY_STOPS = [(0.00, "#2c5c9e"), (0.17, "#5b8ec8"), (0.34, "#a8c4db")]
-C_SNOW_LIT, C_SNOW_SHADE = hex_rgb("#f4f6f8"), hex_rgb("#c0cfdd")
-C_ROCK_LIT, C_ROCK_SHADE = hex_rgb("#93a0ad"), hex_rgb("#64717f")
-C_RIB, C_FOREST = hex_rgb("#3e4854"), hex_rgb("#2a3542")
+SKY_STOPS = [(0.00, "#5c7190"), (0.17, "#8092a8"), (0.34, "#a9b5c1")]
+C_SNOW_LIT, C_SNOW_SHADE = hex_rgb("#e0e5ea"), hex_rgb("#b5c0cb")
+C_ROCK_LIT, C_ROCK_SHADE = hex_rgb("#98a3ae"), hex_rgb("#76828e")
+C_RIB, C_FOREST = hex_rgb("#5a6470"), hex_rgb("#4a5563")
 # Round 2: the shade tones a step lighter (sky-lit snow and rock are blue-grey, not navy),
 # so a shade face halftones to d on p / d on b mixes and is no longer the heaviest shape.
-C_HAZE = hex_rgb("#7390b2")
-C_MIST = hex_rgb("#cfdbe6")
-C_LAKE_FAR, C_LAKE_NEAR = hex_rgb("#a8c4db"), hex_rgb("#86a9d0")
-C_HILL, C_HILL_EDGE = hex_rgb("#27323f"), hex_rgb("#3b4858")
+C_HAZE = hex_rgb("#8d99a8")
+C_MIST = hex_rgb("#b9c3cd")
+C_LAKE_FAR, C_LAKE_NEAR = hex_rgb("#a9b5c1"), hex_rgb("#96a4b3")
+C_HILL, C_HILL_EDGE = hex_rgb("#46525f"), hex_rgb("#56626f")
 # These greys sit nearer the grey mixes (d on k, d on B, k on b) than the solid deep blue,
 # so shaded rock halftones as grey-blue texture and never as a flat patch of sky blue.
-C_REFLECT = hex_rgb("#4f6478")
-C_SHORE, C_SHORE_TOP = hex_rgb("#141c24"), hex_rgb("#2a3a4a")
+C_REFLECT = hex_rgb("#7d8a98")
+C_SHORE, C_SHORE_TOP = hex_rgb("#3b4757"), hex_rgb("#4a5664")
 
 
 def sky_colour(v):
@@ -1149,7 +1176,7 @@ def land_paint(rng, W, H, L, P, noise):
             # the far range, in haze, fading into the pale sky toward its feet
             if y * 2 >= yC[x]:
                 t = clamp((y - yC[x] / 2) / max(1.0, (mist_top - yC[x] / 2)))
-                col = lerp(C_HAZE, hex_rgb("#a8c4db"), 0.1 + 0.8 * t * t)
+                col = lerp(C_HAZE, hex_rgb("#a9b5c1"), 0.3 + 0.7 * t * t)
                 lay = "C"
             # the main range
             if y * 2 >= yB[x]:
@@ -1171,7 +1198,7 @@ def land_paint(rng, W, H, L, P, noise):
                 u = x - (1 if s > 0 else -1) * depth * 0.5
                 rib = noise.fbm1(u, 5.0, 2, 0.5, "rib")
                 rib_k = smoothstep(0.58, 0.8, rib) * clamp(depth / 5.0) * (0.85 - 0.45 * lit)
-                col = lerp(col, C_RIB, rib_k * 0.65)
+                col = lerp(col, C_RIB, rib_k * 0.4)
                 # the forest at the feet (outside the centre band; the centre is the mist valley)
                 f = smoothstep(0.26, 0.10, alt) * 0.85
                 if c0 - 6 < x < c1 + 6:
@@ -1235,17 +1262,19 @@ BAYER8 = [[0, 32, 8, 40, 2, 34, 10, 42], [48, 16, 56, 24, 50, 18, 58, 26],
 
 # The mixes the quantizer may choose: (fg letter, bg letter, characters allowed).
 MIXES = [
-    ("k", "k", " "), ("B", "k", "░▒"), ("i", "k", "░▒"), ("d", "k", "░▒"),
-    ("B", "B", " "), ("b", "B", "░▒"), ("d", "B", "░▒"), ("k", "B", "░▒"),
+    ("k", "k", " "), ("i", "k", "░▒█"), ("B", "k", "░▒"), ("d", "k", "░▒"),
+    ("B", "B", " "), ("b", "B", "░▒"), ("d", "B", "░▒"), ("i", "B", "░▒█"),
     ("b", "b", " "), ("B", "b", "░▒"), ("p", "b", "░▒"), ("h", "b", "░▒"), ("d", "b", "░▒"),
-    ("k", "b", "░▒"),
+    ("i", "b", "░▒█"),
     ("p", "p", " "), ("b", "p", "░▒"), ("c", "p", "░▒█"), ("g", "p", "░▒█"), ("W", "p", "░▒█"),
-    ("h", "p", "░▒"), ("d", "p", "░▒█"), ("i", "p", "░▒"), ("k", "p", "░▒"),
+    ("h", "p", "░▒"), ("d", "p", "░▒█"), ("i", "p", "░▒█"),
 ]
+# Round 4: black (k) is only the table's background; the landscape's darkest tone is the
+# slate slot i, so pines, shore, forest and hills are dark grey-blue, never ink-black.
 # Solid blocks (█) are allowed only for the snow and rock tones (W, g, c, d): every other
 # in-between tone is made inside the cell with ░ ▒, so a gradation never turns into a
 # checker of whole cells.
-GRAIN = 0.12   # a small penalty on mixing two far-apart colours in one cell
+GRAIN = 0.25   # the penalty on mixing two far-apart colours in one cell (round 4: calmer)
 
 
 def build_mixes(palette):
@@ -1344,38 +1373,39 @@ def land_ink(cells, img, layer, lit_map, rng, W, H, L, P, noise):
             lit = lit_map[y][x]
             u = x - (1 if s > 0 else -1) * depth * 0.5
             rib = noise.fbm1(u, 5.0, 2, 0.5, "rib")
-            thr = 0.72 - 0.08 * clamp(depth / 8.0) - 0.10 * (1 - lit)
+            thr = 0.80 - 0.05 * clamp(depth / 8.0) - 0.06 * (1 - lit)
             alt = clamp((mist_top - y) / max(1.0, mist_top - P["summit2"] / 2))
             if rib > thr and alt > 0.12:
                 ch = "\\" if s > 0 else "/"
                 ch_cell, fg_cell, bg_cell = cells[y][x]
-                fg = "d" if fg_cell in ("W", "g", "c", "p") else "k"
+                fg = "d" if fg_cell in ("W", "g", "c", "p") else "i"
                 write(y, x, ch, fg)
     # tree tops along the hills' crests and at the main range's feet (outside the centre)
     for x in range(W):
         y = int(yA[x] // 2)
         if y < mist_bot:
-            write(y, x, "^" if rng.random() < 0.55 else ridge_char(yA[x], slope_at(yA, x)), "k", sky_bg_letter(y, H) if layer[max(0, y - 1)][x] in " C" else None)
-            if rng.random() < 0.35 and y + 1 < mist_bot:
-                write(y + 1, x, "^", "k")
+            write(y, x, "^" if rng.random() < 0.35 else ridge_char(yA[x], slope_at(yA, x)), "i", sky_bg_letter(y, H) if layer[max(0, y - 1)][x] in " C" else None)
+            if rng.random() < 0.15 and y + 1 < mist_bot:
+                write(y + 1, x, "^", "i")
     for x in range(W):
         if c0 - 4 < x < c1 + 4:
             continue
         for y in range(mist_top - 6, mist_top):
-            if layer[y][x] == "B" and y * 2 > yB[x] + 6 and rng.random() < 0.18:
-                write(y, x, "^", "d" if cells[y][x][1] in ("W", "g", "c") else "k")
+            if layer[y][x] == "B" and y * 2 > yB[x] + 6 and rng.random() < 0.06:
+                write(y, x, "^", "d" if cells[y][x][1] in ("W", "g", "c") else "i")
     # the lake: a few ripples, only at the sides and low down, never where the tree stands
     m = L["margin"]
     for y in range(mist_bot + 3, L["lake_bot"]):
         for x in range(W):
             far_side = x < c0 - 8 or x > c1 + 8
             low = y > L["lake_bot"] - 5
-            if (far_side and rng.random() < 0.035) or (low and rng.random() < 0.05):
+            if (far_side and rng.random() < 0.0) or (low and rng.random() < 0.0):   # round 4: no ripples
                 write(y, x, "-", "c" if cells[y][x][2] == "p" else "p")
-    # the shore: tufts on its top row
+    # the shore: tufts at the water's edge, on the lake's last row (round 4: not on the
+    # shore's own row, where they would punch pale holes in the solid slate)
     for x in range(W):
-        if rng.random() < 0.3:
-            write(L["lake_bot"], x, rng.choice('"\',.'), "k")
+        if rng.random() < 0.15:
+            write(L["lake_bot"] - 1, x, rng.choice('"\',.'), "i")
     # the framing pines: one tall near each edge, a shorter beside it, feet on the shore
     land_pines(cells, rng, W, H, L)
     return cells
@@ -1396,7 +1426,7 @@ def land_shape(name, text, rule):
 
 
 def ink_black(y, x, ch):
-    return "k"
+    return "i"   # round 4: the pines in slate, the landscape's ink, not the console's black
 
 
 PINE_TALL = land_shape("pine tall (36 rows)", [
@@ -1552,10 +1582,10 @@ def land_backdrop(W, H, seed, palette=PALETTE_DAY):
 
     def quiet(y, x):   # less dither where the tree stands: the lake's centre
         if y >= L["mist_top"] and L["margin"] <= x < W - L["margin"]:
-            return 0.35
+            return 0.5   # a little, so a near-threshold tone softens instead of snapping into blocks
         return 1.0
 
-    cells = land_halftone(img, palette, dither=7.0, quiet=quiet)
+    cells = land_halftone(img, palette, dither=3.0, quiet=quiet)
     land_ink(cells, img, layer, lit_map, rng, W, H, L, P, noise)
     return cells, {"layout": L, "profiles": P, "layer": layer}
 
@@ -1570,31 +1600,54 @@ class Backdrop:
     the background slot each cell shows, so everything drawn over it (the tree, the
     planter, the clouds, a falling leaf) takes the cell's own background."""
 
+    HALO_CHARS = set("░▒/\\'.-_~^")  # texture and light strokes give way to the halo
+
     def __init__(self, W, H, seed, pairs, fallback=False):
         cells, self.meta = land_backdrop(W, H, seed)
         self.W, self.H, self.pairs = W, H, pairs
-        self.chars, self.bg, self.attr = [], [], []
+        self.chars, self.fgl, self.bg, self.attr = [], [], [], []
+        self.halo = {}  # cell -> how many tree cells it neighbours: a blank margin of paper
         for row in cells:
-            chars, bgs, attrs = [], [], []
+            chars, fgs, bgs, attrs = [], [], [], []
             for ch, fg, bg in row:
                 if fallback:  # a terminal whose palette cannot be set: the standard colours
                     fg, bg = FALLBACK.get(fg, fg), ("B" if bg == "b" else bg)
                 colour, bold = LAND_INK[fg]
                 under = LAND_INK[bg][0]
                 chars.append(ch)
+                fgs.append(fg)
                 bgs.append(under)
                 attrs.append(pairs.attr(colour, under) | (curses.A_BOLD if bold else 0))
             self.chars.append(chars)
+            self.fgl.append(fgs)
             self.bg.append(bgs)
             self.attr.append(attrs)
 
     def cell(self, y, x):
+        if (y, x) in self.halo:
+            return " ", self.pairs.attr(7, self.bg[y][x])
         return self.chars[y][x], self.attr[y][x]
+
+    def halo_shift(self, cell, d):
+        """Counts a neighbouring tree cell in (+1) or out (-1); True when the cell's look
+        changed. Solid blocks and the landscape's own ink (slate and black: pines, shore,
+        tree tops, gullies) keep their marks."""
+        y, x = cell
+        if self.chars[y][x] not in self.HALO_CHARS or self.fgl[y][x] in ("k", "i"):
+            return False
+        before = self.halo.get(cell, 0)
+        after = before + d
+        if after > 0:
+            self.halo[cell] = after
+        else:
+            self.halo.pop(cell, None)
+        return (before > 0) != (after > 0)
 
     def clear(self, y, x0, x1):
         """Blanks the cells x0..x1 of row y to black: the planter's body sits on black."""
         for x in range(max(0, x0), min(self.W - 1, x1) + 1):
-            self.chars[y][x], self.bg[y][x], self.attr[y][x] = " ", 0, self.pairs.attr(0, 0)
+            self.chars[y][x], self.fgl[y][x], self.bg[y][x] = " ", "k", 0
+            self.attr[y][x] = self.pairs.attr(0, 0)
 
     def draw(self, scr):
         """Paints the whole landscape (runs of one attribute at a time)."""
@@ -2030,6 +2083,7 @@ class Tree:
         self.H, self.W = scr.getmaxyx()
         self.sky = None  # the sky behind the tree, set by the screensaver loop
         self.backdrop = None  # the landscape behind the sky, likewise
+        self.ink = set()  # the trunk's inside: drawn on black over a landscape
         self.busy = set()  # cells a leaf or dust in the air is passing, kept from the sky
         self.cx = self.W // 2  # the base's column while planning; the composition is placed after
         self.air = min(AIR_ABOVE, max(3, self.H // 9))   # rows kept clear above the apex
@@ -2246,11 +2300,14 @@ class Tree:
         total = taper_total or n
         for i, (y, x) in enumerate(cells_xy):
             t = min(1.0, (taper_from + i) / max(1, total - 1))
-            w = max(1, int(round(1 + (w0 - 1) * (1 - t) ** 1.3)))
+            w = max(1, int(round(1 + (w0 - 1) * (1 - t) ** 1.15)))
             dx = cells_xy[i + 1][1] - x if i + 1 < n else 0
             glyph = "|" if dx == 0 or (nebari and i < 2) else ("/" if dx > 0 else "\\")
-            text = glyph + "|" * (w - 2) + glyph if w >= 3 else glyph * w
+            core = "▒" if TRUNK_CORE == "shade" else "|"
+            text = glyph + core * (w - 2) + glyph if w >= 3 else glyph * w
             x0 = x - w // 2
+            if w >= 3 and TRUNK_CORE == "ink":  # the inside of the trunk: an ink mass with bark lines
+                self.ink.update((y, cx) for cx in range(x0 + 1, x0 + w - 1))
             if i == 0 and nebari:
                 left, right = nebari
                 text, x0 = left + text + right, x0 - len(left)
@@ -2392,6 +2449,17 @@ class Tree:
             cells.append((cy, cx, glyph, None))
         if len(cells) < (5 if kind == "fallb" else 3):
             return None
+        if kind == "primary":  # a main branch is two rows thick for its first part
+            thick = []
+            own = {(cy, cx) for cy, cx, _g, _a in cells}
+            for j, (cy, cx, glyph, _a) in enumerate(cells):
+                thick.append((cy, cx, glyph, None))
+                under = (cy + 1, cx)
+                if j < 0.4 * len(cells) and under[0] < self.H - 2 and under not in self.wood \
+                        and under not in self.blocked and under not in own:
+                    thick.append((under[0], under[1], "_" if glyph == "~" else glyph, None))
+                    own.add(under)
+            cells = thick
         s.cells = cells
         for y1, x1, _t, _a in cells:
             self.wood[(y1, x1)] = s
@@ -2616,9 +2684,12 @@ class Tree:
                 for x in xs:
                     del chosen[(y, x)]
         spots = []
+        bottom = max(m[3] for m in members) + 1  # the pads' lowest row: the shaded underside
         for (y, x), (edge, lit) in chosen.items():
             char = rng.choice(cfg["leaf_edge"] if edge else self.leaf_set)
             attr = self.attrs["leaf"][1 if lit and not edge else 0]
+            if y == bottom and not edge:
+                attr = self.attrs["leaf_under"]
             order = math.hypot((x - o_x) / 2, y - o_y) + rng.uniform(0, 0.5)
             spots.append((order, y, x, char, attr))
         spots.sort()
@@ -2827,6 +2898,7 @@ class Tree:
             s.cells = [(y, x + dx, text, attr) for y, x, text, attr in s.cells]
             s.cover = {(y, x + dx) for y, x in s.cover}
         self.wood = {(y, x + dx): s for (y, x), s in self.wood.items()}
+        self.ink = {(y, x + dx) for y, x in self.ink}
         self.trunk_rows = {y: (x0 + dx, w) for y, (x0, w) in self.trunk_rows.items()}
         self.trunk_path = {y: x + dx for y, x in self.trunk_path.items()}
         if hasattr(self, "twin_path"):
@@ -2886,14 +2958,34 @@ class Tree:
         if self.backdrop is None:
             self.put_raw(y, x, text, attr)
             return
-        bg = self.backdrop.bg[y]
+        row = self.backdrop.bg[y]
+        bg = [0 if (y, x + k) in self.ink else row[x + k] for k in range(len(text))]
         i = 0
         while i < len(text):
             k = i + 1
-            while k < len(text) and bg[x + k] == bg[x + i]:
+            while k < len(text) and bg[k] == bg[i]:
                 k += 1
-            self.put_raw(y, x + i, text[i:k], PAIRS.on(attr, bg[x + i]))
+            self.put_raw(y, x + i, text[i:k], PAIRS.on(attr, bg[i]))
             i = k
+
+    def halo_add(self, cell):
+        self.halo_shift(cell, 1)
+
+    def halo_drop(self, cell):
+        self.halo_shift(cell, -1)
+
+    def halo_shift(self, cell, d):
+        """A tree cell came (+1) or went (-1): its eight neighbours gain or lose a count
+        of the halo, the margin of paper the landscape keeps around the ink."""
+        if not self.backdrop:
+            return
+        y0, x0 = cell
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                n = (y0 + dy, x0 + dx)
+                if (dy or dx) and 0 <= n[0] < self.H and 0 <= n[1] < self.W and self.backdrop.halo_shift(n, d):
+                    if n not in self.grid and n not in self.busy:
+                        self.restore(n)
 
     def put_raw(self, y, x, text, attr):
         try:
@@ -2966,9 +3058,12 @@ class Tree:
             y, x, text, _a = s.cells[i]
             if all(grid.get((y, x + k)) == ("wood", text[k], attr) for k in range(len(text))):
                 return False  # already there, exactly so
+            new = [(y, x + k) for k in range(len(text)) if (y, x + k) not in grid]
             self.put(y, x, text, attr)
             for k in range(len(text)):
                 grid[(y, x + k)] = ("wood", text[k], attr)
+            for cell in new:
+                self.halo_add(cell)
             return True
 
         def leaf(s, i, t):
@@ -2977,6 +3072,8 @@ class Tree:
             if under is not None and (y, x) not in s.cover:
                 return False
             grid[(y, x)] = ("leaf", char, attr, under)  # the twig comes back when the leaf falls
+            if under is None:
+                self.halo_add((y, x))
             if cfg["bud_delay"]:
                 self.put(y, x, ".", attrs["bud"])
                 heapq.heappush(events, (t + cfg["bud_delay"] * cfg["step"], next(order),
@@ -3277,6 +3374,8 @@ class Tree:
                 _kind, _char, attr, under = self.grid.pop(cell)
                 if under is not None:
                     self.grid[cell] = under
+                else:
+                    self.halo_drop(cell)
                 period = rng.uniform(1.2, 2.5)
                 flying.append({"y": float(cell[0]), "x": float(cell[1]), "attr": attr,
                                "vy": rng.uniform(0.25, 0.5), "amp": rng.uniform(2.0, 6.0),
@@ -3344,7 +3443,8 @@ class Tree:
         while k < len(steps) or dust:
             while k < len(steps) and t >= next_step - 1e-9:
                 for y, x in steps[k]:
-                    self.grid.pop((y, x), None)
+                    if self.grid.pop((y, x), None) is not None:
+                        self.halo_drop((y, x))
                     self.restore((y, x))
                     if rng.random() < 0.5:
                         dust.append({"y": float(y), "x": max(0, min(self.W - 1, x + rng.choice((-1, 0, 0, 1)))),
@@ -3486,6 +3586,8 @@ def screensaver(scr, args, cfg):
             sky.clouds, sky.events = [], []
             sky.tick(time.monotonic(), {})
             sky = None
+        if backdrop:
+            backdrop.halo.clear()
         tree = Tree(scr, cfg, rng, attrs, inherit)
         tree.sky, tree.backdrop = sky, backdrop
         if sky:
