@@ -834,7 +834,11 @@ def make_attrs(cfg, live=True):
             "gravel": color["white"], "shadow": color["black"] | curses.A_BOLD,
             "stand": color[cfg["stand_color"]],
             "turn": [color[name] | curses.A_BOLD for name in cfg["autumn_colors"].split()],
-            "W": color["white"] | curses.A_BOLD, "g": color["white"], "d": color["black"] | curses.A_BOLD}
+            # The clouds' three greys: over a landscape (its palette set) the tops take the
+            # magenta slot, which the landscape leaves free, so the clouds keep their own
+            # light however dim the landscape is; on a plain console, bold white.
+            "W": color["magenta" if PALETTE_WAY else "white"] | curses.A_BOLD, "g": color["white"],
+            "d": color["black"] | curses.A_BOLD}
 
 
 def catmull_rom(points, lo, hi):
@@ -896,29 +900,26 @@ PALETTE_DAY = {
     4:  ("#050505", "deep sky, zenith (bg); the oval pot's glaze"),
     5:  ("#090909", "mid sky (bg)"),
     6:  ("#0e0e0e", "pale sky at the horizon, mist, far lake (bg); the celadon pot"),
-    7:  ("#121212", "soft white: cloud bodies g, snow in shade, gravel"),
-    8:  ("#080808", "grey-blue: cloud bases d, rock, tree shadow"),
+    7:  ("#707070", "cloud bodies g, gravel"),
+    8:  ("#404040", "cloud bases d, far clouds, shadows"),
     9:  ("#d33a1e", "autumn red leaves (tree only)"),
     10: ("#3db04a", "leaves lit, buds (tree only)"),
     11: ("#cf8f1c", "growing tip, autumn yellow leaves (tree only)"),
     12: ("#020202", "slate: pines, shore, forest, tree tops, gullies (the landscape's ink); oval pot pattern"),
-    13: ("#0a0a0a", "haze: the far range (the free 'bright magenta' slot)"),
-    14: ("#111111", "ice: bright mist, snow in shade; celadon highlight"),
-    15: ("#161616", "bright white: cloud tops W, sunlit snow"),
+    13: ("#a0a0a0", "cloud tops W (the clouds' own slot)"),
+    14: ("#8a8a8a", "free; the celadon pot's highlight"),
+    15: ("#e0e0e0", "bright white: the planters' highlights"),
 }
 # The same slots at other hours (round 2 material: swapped at a tree boundary by the clock).
 PALETTE_EVENING = {**PALETTE_DAY, **{
-    4: ("#040404", ""), 5: ("#080808", ""), 6: ("#0d0d0d", ""), 7: ("#111110", ""),
-    8: ("#070707", ""), 12: ("#020202", ""), 13: ("#090909", ""), 14: ("#101010", ""),
-    15: ("#141414", "")}}
+    4: ("#040404", ""), 5: ("#080808", ""), 6: ("#0d0d0d", ""),
+    }}
 PALETTE_NIGHT = {**PALETTE_DAY, **{
-    4: ("#010101", ""), 5: ("#010101", ""), 6: ("#020202", ""), 7: ("#09090a", ""),
-    8: ("#030404", ""), 12: ("#010101", ""), 13: ("#030303", ""), 14: ("#070708", ""),
-    15: ("#101010", "")}}
+    4: ("#010101", ""), 5: ("#010101", ""), 6: ("#020202", ""),
+    }}
 PALETTE_DAWN = {**PALETTE_DAY, **{
-    4: ("#060607", ""), 5: ("#0b0b0b", ""), 6: ("#101010", ""), 7: ("#131313", ""),
-    8: ("#090909", ""), 12: ("#030303", ""), 13: ("#0b0b0b", ""), 14: ("#121212", ""),
-    15: ("#161616", "")}}
+    4: ("#060607", ""), 5: ("#0b0b0b", ""), 6: ("#101010", ""),
+    }}
 PALETTES = {"day": PALETTE_DAY, "dawn": PALETTE_DAWN, "evening": PALETTE_EVENING,
             "night": PALETTE_NIGHT}
 # The clock (round 2): night 21:00-05:59, dawn 06:00-07:59, day 08:00-16:59, evening
@@ -1593,6 +1594,10 @@ def land_backdrop(W, H, seed, palette=PALETTE_DAY):
 # A paint letter -> (console colour, bold). Backgrounds use the colour alone.
 LAND_INK = {"k": (0, False), "B": (4, False), "b": (5, False), "p": (6, False), "g": (7, False),
             "d": (0, True), "i": (4, True), "h": (5, True), "c": (6, True), "W": (7, True)}
+# The landscape keeps to four slots (4 5 6 12) so the clouds and the planters have slots
+# of their own (7 8 13 14 15) that stay bright however dim the landscape is: its finer
+# tones are merged (snow and ice into the pale sky, rock into the slate, haze into the mid sky).
+LAND_REMAP = {"g": "p", "c": "p", "W": "p", "d": "i", "h": "b"}
 
 
 class Backdrop:
@@ -1612,6 +1617,8 @@ class Backdrop:
             for ch, fg, bg in row:
                 if fallback:  # a terminal whose palette cannot be set: the standard colours
                     fg, bg = FALLBACK.get(fg, fg), ("B" if bg == "b" else bg)
+                else:
+                    fg = LAND_REMAP.get(fg, fg)
                 colour, bold = LAND_INK[fg]
                 under = LAND_INK[bg][0]
                 chars.append(ch)
@@ -2921,6 +2928,8 @@ class Tree:
         if not self.pot_rows:
             return
         body_name, trim_name = pot_palette(self.pot_kind)
+        if PALETTE_WAY:  # over a landscape the blue and cyan slots are the dimmed sky: a grey glaze
+            body_name, trim_name = ("white" if n in ("blue", "cyan", "magenta") else n for n in (body_name, trim_name))
         body = color[cfg["pot_color"] if cfg["pot_color"] != "auto" else body_name]
         trim = color[cfg["trim_color"] if cfg["trim_color"] != "auto" else trim_name]
         stand = self.attrs["stand"]
@@ -3575,6 +3584,7 @@ def screensaver(scr, args, cfg):
             backdrop = Backdrop(cols, rows, seed if seed is not None else random.randrange(1 << 30),
                                 PAIRS, fallback=not set_palette(PALETTE_DAY))
             backdrop.draw(scr)
+            attrs = make_attrs(cfg)  # the clouds' slots follow the palette just set
         if sky is None and cfg["sky"]:
             sky = Sky(scr, random.Random(None if seed is None else f"sky {seed}"), attrs)
             sky.backdrop = backdrop

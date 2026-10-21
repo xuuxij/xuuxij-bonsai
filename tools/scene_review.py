@@ -34,6 +34,7 @@ def main():
     mod, cfg, rest = setup(argv)
     if core:
         mod.TRUNK_CORE = core
+    mod.PALETTE_WAY = "harness"  # as on a console whose palette the program sets
     outdir = rest[0]
     seed = int(rest[1]) if len(rest) > 1 else 1
     trees = int(rest[2]) if len(rest) > 2 else 1
