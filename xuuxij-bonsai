@@ -2281,7 +2281,7 @@ class Sky:
         cirrus = {"clear": rng.randint(1, 2), "fair": 1, "high": 2, "misty": rng.randint(0, 1)}[self.mood]
         cirrus = int(cirrus * self.amount["far"] + rng.random())  # the far setting counts here too
         for i in range(cirrus):
-            size = (2, 1)[i] if self.mood == "high" else rng.choice((0, 1, 1, 2))
+            size = (2, 1)[i % 2] if self.mood == "high" else rng.choice((0, 1, 1, 2))
             events.append((rng.uniform(0, span * 0.7), "cirrus", size))
         if self.mood == "fair":
             t = rng.uniform(10, 90)
