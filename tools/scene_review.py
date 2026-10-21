@@ -34,7 +34,9 @@ def main():
     mod, cfg, rest = setup(argv)
     if core:
         mod.TRUNK_CORE = core
-    mod.PALETTE_WAY = "harness"  # as on a console whose palette the program sets
+    # With a landscape the program sets the console's palette; without one it leaves the
+    # console's own colours, which the PNG shows as the standard console palette.
+    mod.PALETTE_WAY = "harness" if cfg["landscape"] != "no" else None
     outdir = rest[0]
     seed = int(rest[1]) if len(rest) > 1 else 1
     trees = int(rest[2]) if len(rest) > 2 else 1
@@ -121,7 +123,12 @@ def draw_png(mod, pairs, cells, out):
         font = ImageFont.truetype("C:/Windows/Fonts/consola.ttf", 14)
     except OSError:
         font = ImageFont.load_default()
-    rgb = {slot: mod.hex_rgb(spec[0]) for slot, spec in mod.PALETTE_DAY.items()}
+    if mod.PALETTE_WAY:
+        rgb = {slot: mod.hex_rgb(spec[0]) for slot, spec in mod.PALETTE_DAY.items()}
+    else:  # the standard console palette, as a console the program does not re-colour shows it
+        rgb = {i: mod.hex_rgb(h) for i, h in enumerate((
+            "#000000", "#aa0000", "#00aa00", "#aa5500", "#0000aa", "#aa00aa", "#00aaaa", "#aaaaaa",
+            "#555555", "#ff5555", "#55ff55", "#ffff55", "#5555ff", "#ff55ff", "#55ffff", "#ffffff"))}
     for y in range(H):
         for x in range(W):
             c, attr = cells[y][x]
