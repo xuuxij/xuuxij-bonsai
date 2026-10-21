@@ -900,36 +900,39 @@ def gentle_path(points, lo, hi, limit=2):
 # ---- the palette ---------------------------------------------------------------------------
 # slot -> (RGB by day, what uses it). The tree's and planter's slots are listed so the whole
 # 16-slot palette is in one place; the landscape only draws with the slots in LETTERS.
-PALETTE_DAY = {
+DESIGN_DAY = {
     0:  ("#000000", "the console; the table under the planter; pines, forest, deepest shade"),
     1:  ("#9c4a30", "rosewood stand, Teizan red clay (planter only)"),
     2:  ("#1f6d2b", "leaves shaded (tree only)"),
     3:  ("#4f3014", "trunk, branches, Teizan trim (tree only; unchanged)"),
-    4:  ("#050505", "deep sky, zenith (bg); the oval pot's glaze"),
-    5:  ("#090909", "mid sky (bg)"),
-    6:  ("#0e0e0e", "pale sky at the horizon, mist, far lake (bg); the celadon pot"),
-    7:  ("#282826", "cloud bodies g, gravel"),
-    8:  ("#111110", "cloud bases d, far clouds, shadows"),
+    4:  ("#5c7190", "deep sky, zenith (bg); the oval pot's glaze"),
+    5:  ("#8092a8", "mid sky (bg)"),
+    6:  ("#a9b5c1", "pale sky at the horizon, mist, far lake (bg); the celadon pot"),
+    7:  ("#c9d0d6", "soft white g: snow in shade, light dots (the display gives this slot to the clouds)"),
+    8:  ("#7f8b97", "grey-blue d: rock (the display gives this slot to the clouds)"),
     9:  ("#d33a1e", "autumn red leaves (tree only)"),
     10: ("#3db04a", "leaves lit, buds (tree only)"),
     11: ("#cf8f1c", "growing tip, autumn yellow leaves (tree only)"),
-    12: ("#020202", "slate: pines, shore, forest, tree tops, gullies (the landscape's ink); oval pot pattern"),
-    13: ("#4e4e4e", "cloud tops W (the clouds' own slot)"),
-    14: ("#40403f", "free; the celadon pot's highlight"),
-    15: ("#e0e0e0", "bright white: the planters' highlights"),
+    12: ("#3b4757", "slate: pines, shore, forest, tree tops, gullies (the landscape's ink); oval pot pattern"),
+    13: ("#8d99a8", "haze h: the far range (the display gives this slot to the clouds)"),
+    14: ("#bfc8d1", "ice c: bright mist, snow in shade (the display gives this slot to the clouds)"),
+    15: ("#e4e8ec", "bright white: sunlit snow, the landscape's lightest dots; the white pots' highlight"),
 }
 # The same slots at other hours (round 2 material: swapped at a tree boundary by the clock).
-PALETTE_EVENING = {**PALETTE_DAY, **{
-    4: ("#040404", ""), 5: ("#080808", ""), 6: ("#0d0d0d", ""),
-    }}
-PALETTE_NIGHT = {**PALETTE_DAY, **{
-    4: ("#010101", ""), 5: ("#010101", ""), 6: ("#020202", ""),
-    }}
-PALETTE_DAWN = {**PALETTE_DAY, **{
-    4: ("#060607", ""), 5: ("#0b0b0b", ""), 6: ("#101010", ""),
-    }}
-PALETTES = {"day": PALETTE_DAY, "dawn": PALETTE_DAWN, "evening": PALETTE_EVENING,
-            "night": PALETTE_NIGHT}
+DESIGN_EVENING = {**DESIGN_DAY, **{
+    4: ("#5a657e", ""), 5: ("#86899c", ""), 6: ("#b3aba6", ""),
+    12: ("#3f4553", ""),
+    15: ("#e8d8cc", "")}}
+DESIGN_NIGHT = {**DESIGN_DAY, **{
+    4: ("#1a2230", ""), 5: ("#27303f", ""), 6: ("#3e4858", ""),
+    12: ("#232b37", ""),
+    15: ("#b7c1cf", "")}}
+DESIGN_DAWN = {**DESIGN_DAY, **{
+    4: ("#6a7a90", ""), 5: ("#8c9bae", ""), 6: ("#b4bcc6", ""),
+    12: ("#46505e", ""),
+    15: ("#ece9e6", "")}}
+PALETTES = {"day": DESIGN_DAY, "dawn": DESIGN_DAWN, "evening": DESIGN_EVENING,
+            "night": DESIGN_NIGHT}
 # The clock (round 2): night 21:00-05:59, dawn 06:00-07:59, day 08:00-16:59, evening
 # 17:00-20:59, local time, swapped at a tree boundary; only these nine slots move.
 
@@ -1111,20 +1114,20 @@ def land_profiles(rng, W, H, L, noise):
 
 # ---- paint ---------------------------------------------------------------------------------
 
-SKY_STOPS = [(0.00, "#050505"), (0.17, "#090909"), (0.34, "#0e0e0e")]
-C_SNOW_LIT, C_SNOW_SHADE = hex_rgb("#151515"), hex_rgb("#101010")
-C_ROCK_LIT, C_ROCK_SHADE = hex_rgb("#0c0c0c"), hex_rgb("#070707")
-C_RIB, C_FOREST = hex_rgb("#040404"), hex_rgb("#030303")
+SKY_STOPS = [(0.00, "#5c7190"), (0.17, "#8092a8"), (0.34, "#a9b5c1")]
+C_SNOW_LIT, C_SNOW_SHADE = hex_rgb("#e0e5ea"), hex_rgb("#b5c0cb")
+C_ROCK_LIT, C_ROCK_SHADE = hex_rgb("#98a3ae"), hex_rgb("#76828e")
+C_RIB, C_FOREST = hex_rgb("#5a6470"), hex_rgb("#4b5563")
 # Round 2: the shade tones a step lighter (sky-lit snow and rock are blue-grey, not navy),
 # so a shade face halftones to d on p / d on b mixes and is no longer the heaviest shape.
-C_HAZE = hex_rgb("#0a0a0a")
-C_MIST = hex_rgb("#101010")
-C_LAKE_FAR, C_LAKE_NEAR = hex_rgb("#0e0e0e"), hex_rgb("#0c0c0c")
-C_HILL, C_HILL_EDGE = hex_rgb("#030303"), hex_rgb("#040404")
+C_HAZE = hex_rgb("#8d99a8")
+C_MIST = hex_rgb("#b9c3cd")
+C_LAKE_FAR, C_LAKE_NEAR = hex_rgb("#a9b5c1"), hex_rgb("#96a4b3")
+C_HILL, C_HILL_EDGE = hex_rgb("#46525f"), hex_rgb("#56626f")
 # These greys sit nearer the grey mixes (d on k, d on B, k on b) than the solid deep blue,
 # so shaded rock halftones as grey-blue texture and never as a flat patch of sky blue.
-C_REFLECT = hex_rgb("#080808")
-C_SHORE, C_SHORE_TOP = hex_rgb("#020202"), hex_rgb("#030303")
+C_REFLECT = hex_rgb("#7d8a98")
+C_SHORE, C_SHORE_TOP = hex_rgb("#3b4757"), hex_rgb("#4a5664")
 
 
 def sky_colour(v):
@@ -1185,7 +1188,7 @@ def land_paint(rng, W, H, L, P, noise):
             # the far range, in haze, fading into the pale sky toward its feet
             if y * 2 >= yC[x]:
                 t = clamp((y - yC[x] / 2) / max(1.0, (mist_top - yC[x] / 2)))
-                col = lerp(C_HAZE, hex_rgb("#0e0e0e"), 0.3 + 0.7 * t * t)
+                col = lerp(C_HAZE, hex_rgb("#a9b5c1"), 0.3 + 0.7 * t * t)
                 lay = "C"
             # the main range
             if y * 2 >= yB[x]:
@@ -1580,7 +1583,7 @@ def land_pines(cells, rng, W, H, L):
 
 # ---- the backdrop --------------------------------------------------------------------------
 
-def land_backdrop(W, H, seed, palette=PALETTE_DAY):
+def land_backdrop(W, H, seed, palette=DESIGN_DAY):
     """Rows of cells (char, fg letter, bg letter) for a W x H screen from the seed."""
     rng = random.Random(seed)
     noise = Noise(random.Random(seed * 7919 + 1))
@@ -1602,10 +1605,61 @@ def land_backdrop(W, H, seed, palette=PALETTE_DAY):
 # A paint letter -> (console colour, bold). Backgrounds use the colour alone.
 LAND_INK = {"k": (0, False), "B": (4, False), "b": (5, False), "p": (6, False), "g": (7, False),
             "d": (0, True), "i": (4, True), "h": (5, True), "c": (6, True), "W": (7, True)}
-# The landscape keeps to four slots (4 5 6 12) so the clouds and the planters have slots
-# of their own (7 8 13 14 15) that stay bright however dim the landscape is: its finer
-# tones are merged (snow and ice into the pale sky, rock into the slate, haze into the mid sky).
-LAND_REMAP = {"g": "p", "c": "p", "W": "p", "d": "i", "h": "b"}
+# The landscape keeps to five slots (4 5 6 12 15) so the clouds have four of their own
+# (7 8 13 14) that stay bright however dim the landscape is: its finer tones are merged
+# (soft white and ice into the snow white, rock into the slate, haze into the mid sky).
+LAND_REMAP = {"g": "W", "c": "W", "d": "i", "h": "b"}
+
+# What the console shows: the design's colours with the landscape's lightness scaled
+# down (the owner wants a dim ground that keeps its contrast and a little of its colour)
+# and its chroma kept or scaled, the clouds' greys at their own lightness, the tree's
+# and planter's as designed. Scaling lightness in a perceptual space (OKLab) keeps the
+# steps between the tones, where scaling the light itself crushed them together. The
+# halftone is always made against the design, so the picture keeps its texture.
+LANDSCAPE_L = 0.26        # the landscape's lightness, as a share of the design's
+LANDSCAPE_CHROMA = 1.0    # and its colour (1 = as designed)
+CLOUD_L = 0.41            # the clouds' greys' lightness
+LANDSCAPE_SLOTS = (4, 5, 6, 12, 15)
+CLOUD_SLOTS = {13: "W", 14: "c", 7: "g", 8: "d"}  # slot -> the tonal clouds' tone
+
+
+def _lin(c):
+    c /= 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _srgb(v):
+    v = max(0.0, min(1.0, v))
+    return int(round((12.92 * v if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055) * 255))
+
+
+def shade(hexcol, k_l, k_c=1.0):
+    """`hexcol` with its lightness scaled by k_l and its chroma by k_c (OKLab)."""
+    r, g, b = (_lin(c) for c in hex_rgb(hexcol))
+    l_ = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b) ** (1 / 3)
+    m_ = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b) ** (1 / 3)
+    s_ = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b) ** (1 / 3)
+    L = (0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_) * k_l
+    a = (1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_) * k_c
+    bb = (0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_) * k_c
+    l_ = (L + 0.3963377774 * a + 0.2158037573 * bb) ** 3
+    m_ = (L - 0.1055613458 * a - 0.0638541728 * bb) ** 3
+    s_ = (L - 0.0894841775 * a - 1.2914855480 * bb) ** 3
+    return "#%02x%02x%02x" % (_srgb(4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_),
+                              _srgb(-1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_),
+                              _srgb(-0.0041960863 * l_ - 0.7034186147 * m_ + 1.7076147010 * s_))
+
+
+def display_palette(design, cloud_tones):
+    out = {}
+    for slot, (rgb, use) in design.items():
+        if slot in LANDSCAPE_SLOTS:
+            out[slot] = (shade(rgb, LANDSCAPE_L, LANDSCAPE_CHROMA), use)
+        elif slot in CLOUD_SLOTS:
+            out[slot] = (shade(cloud_tones[CLOUD_SLOTS[slot]], CLOUD_L), use)
+        else:
+            out[slot] = (rgb, use)
+    return out
 
 
 class Backdrop:
@@ -2141,6 +2195,10 @@ def tc_fade(text, paint, p, solid=True):
         out_t.append("".join(t))
         out_p.append("".join(pp))
     return out_t, out_p
+
+
+# The console's palette: the design shaded for the screen (see display_palette).
+PALETTE_DAY = display_palette(DESIGN_DAY, TC_TONES)
 
 
 class Cloud:
