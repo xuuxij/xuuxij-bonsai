@@ -1,6 +1,6 @@
 # References
 
-What the planters, the tall forms and the sky were designed from.
+What the planters, the forms, the foliage and bark, the sky and the landscape were designed from.
 
 ## Pots
 
@@ -40,6 +40,56 @@ What the planters, the tall forms and the sky were designed from.
 - Bonsai styles. https://en.wikipedia.org/wiki/Bonsai_styles
 - Proportions (height 8 to 12 times the trunk's width for a literati, 6 to 8 for a
   formal upright). https://usecalcpro.com/garden/bonsai-calculator
+- All the named styles: neagari's root share, han-kengai's apex rule, kabudachi, sabamiki,
+  sharimiki. https://en.wikipedia.org/wiki/Bonsai_styles
+- Styles with proportions: shakan 60 to 80 degrees, the broom's trunk a third of the
+  height, the literati's round pots, kabudachi's crown, sharimiki thinning upward.
+  https://www.bonsaiempire.com/basics/styles
+- The Japanese names (fukinagashi, hokidachi, neagari, sabamiki, bankan, nazashi weeping,
+  jukei silhouettes). https://magiminiland.org/BigPicture/JapaneseStyles.html
+- Semi-cascade: the apex at or below the rim, never below the base; the trunk never touches
+  the rim. https://gardenerspath.com/how-to/pruning/grow-cascade-bonsai/
+- Semi-cascade's trunk angle and the visual-mass rule. https://bonsailearningcenter.com/?p=55088
+- Exposed root (neagari): the river-bank origin, azaleas. https://mail.bonsainut.com/threads/neagari-style.8146
+  and https://www.bonsaiempire.com/forum/advanced-techniques/6717-neagari-chinese-elm
+- Weeping bonsai: branches up, out, then pendulously down; the willow 'Rokkakudo'.
+  https://www.bonsainut.com/threads/weeping-trees.14500 and
+  https://issuu.com/internationalbonsai/docs/2021_4/s/14128100
+
+## Foliage pads
+
+- Pine pads: three shoots a pad, a half circle on top, the underside flat.
+  https://stories.rbge.org.uk/archives/29158
+- Juniper pads: flattened, lozenge from the front, many small pads fanned into one.
+  https://bonsai4me.com/styling-juniper-bonsai-branches-part-two-wiring-and-placement/
+- Juniper foliage colours, bark, deadwood. https://www.bonsaiempire.com/tree-species/juniper
+
+## Deadwood
+
+- Jin, shari, uro, sabamiki, tanuki; lime sulphur. https://en.wikipedia.org/wiki/Deadwood_bonsai_techniques
+- Making jin and shari; evergreens only. https://www.bonsaiempire.com/basics/styling/deadwood
+
+## Species (bark and leaves)
+
+- Japanese black pine: bark grey-black fissured into plates; needles in pairs.
+  https://en.wikipedia.org/wiki/Pinus_thunbergii and
+  https://hortflora.rbg.vic.gov.au/taxon/ad8b4424-5340-11e7-b82b-005056b0018f
+- Japanese white pine: needles in fives, a dense conical crown. https://en.wikipedia.org/wiki/Pinus_parviflora
+- Chinese juniper and shimpaku: scale and needle foliage. https://en.wikipedia.org/wiki/Juniperus_chinensis
+- Chinese elm (lacebark): flaking bark of mottled greys, tans and reds; small leaves.
+  https://en.wikipedia.org/wiki/Ulmus_parvifolia
+- Zelkova: vase-shaped, bark exfoliating to orange, autumn yellows to reds.
+  https://en.wikipedia.org/wiki/Zelkova_serrata
+- Trident maple: three-lobed leaves; bark scaly and flaky with age, orange-brown beneath.
+  https://en.wikipedia.org/wiki/Acer_buergerianum and https://mortonarb.org/?p=3107
+- Satsuki azalea: evergreen, 1 to 5 inch flowers, May to June. https://en.wikipedia.org/wiki/Satsuki_azalea
+
+## Text art of trees
+
+- cbonsai: leaves `&`, trunk and shoot glyphs by direction. https://gitlab.com/jallbrit/cbonsai
+- asciiart.eu bonsai (llizard: `#o#` foliage, `{}` bark). https://www.asciiart.eu/plants/bonsai-trees
+- ASCII trees: "Pine Tree In The Wind" (tiers `> <`, needles `%` `;` `:`), "Old Tree"
+  (`( ) ; :`), a crown of `@`. https://asciiart.website/index.php?art=plants/trees
 
 ## Sky
 

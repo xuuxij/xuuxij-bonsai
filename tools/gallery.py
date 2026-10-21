@@ -24,6 +24,33 @@ FORMS = [
     ("Slanting (shakan)", "style = shakan", "The trunk leans a column a row, bowing against the lean; branches level, parallel to the ground.", 5, {"style": "shakan"}),
     ("Literati (bunjin)", "style = bunjin", "Tall, slender, several reversals; branches only in the upper third; two or three small pads; the apex sometimes bare.", 1, {"style": "bunjin"}),
     ("Cascade (kengai)", "style = kengai", "A short rise with a crown, then the trunk arcs over the rim and falls beside a tall stand, pads hanging from it.", 1, {"style": "kengai"}),
+    ("Windswept (fukinagashi)", "style = fukinagashi", "A steep slant, every branch streaming to the lee in thin lenses of foliage; often a jin on the windward side.", 1, {"style": "fukinagashi"}),
+    ("Broom (hokidachi)", "style = hokidachi", "A short straight trunk ending at a third of the height, a fan of fine branches forking twice, one rounded crown over the upper fan, the lower fan bare.", 1, {"style": "hokidachi"}),
+    ("Clump (kabudachi)", "style = kabudachi", "Three trunks from one base, the thickest the tallest, the others leaning away on their sides, one canopy.", 1, {"style": "kabudachi"}),
+    ("Exposed root (neagari)", "style = neagari", "The trunk stands on three or four bare root legs; one tree in three clasps a rock between them.", 1, {"style": "neagari"}),
+    ("Semi-cascade (hankengai)", "style = hankengai", "The cascade's rise and crown, then the trunk arcs over the rim and runs out past it, easing down but never below the planter's body, pads above the run.", 1, {"style": "hankengai"}),
+]
+CLASSIC = {"foliage": "cloud", "bark": "smooth", "deadwood": "no"}  # the form cards show the form alone
+ON_MOYOGI = {"style": "moyogi", "twin": "no", "bark": "smooth", "deadwood": "no"}
+ON_CHOKKAN = {"style": "chokkan", "foliage": "cloud", "deadwood": "no"}
+# The foliage styles, each on the same informal upright; the barks on the same formal upright.
+FOLIAGE = [
+    ("Cloud", "foliage = cloud", "The broadleaf pad as it has always been: a flat-bottomed dome, lit along the top, a dark underside.", 1, dict(ON_MOYOGI, foliage="cloud")),
+    ("Pine", "foliage = pine", "Needle tiers: strata of ^ with a dark seam under each tier, the column tops lit; gold-only autumn.", 1, dict(ON_MOYOGI, foliage="pine")),
+    ("Juniper", "foliage = juniper", "Flat lozenge pads, wider and lower, two twigs a branch so three pads fan into one; gold-only autumn.", 1, dict(ON_MOYOGI, foliage="juniper")),
+    ("Elm", "foliage = elm", "Fine small leaves (colons, semicolons, quotes) with light through the twigs; taller, rounder pads.", 1, dict(ON_MOYOGI, foliage="elm")),
+    ("Willow", "foliage = willow", "A cap near each branch's end and curtains of | ; : hanging from every second cell, the branches drooping; gold-only autumn.", 1, dict(ON_MOYOGI, foliage="willow")),
+    ("Tuft", "foliage = tuft", "Sparse literati tufts: low pads with holes, lit on the top row only, no underside; gold-only autumn.", 1, dict(ON_MOYOGI, foliage="tuft")),
+    ("Azalea", "foliage = azalea", "The cloud in bloom: @ flowers in bold red and o buds in the upper part of each pad, at least three a pad; the blooms let go first in autumn.", 1, dict(ON_MOYOGI, foliage="azalea")),
+    ("Fruit", "foliage = fruit", "The cloud with o fruit in gold hanging in the lower part of each pad; the fruit hangs on last.", 1, dict(ON_MOYOGI, foliage="fruit")),
+]
+BARKS = [
+    ("Smooth", "bark = smooth", "The bark as it has always been: | edges, diagonals on moving rows, the inside on black.", 3, dict(ON_CHOKKAN, bark="smooth")),
+    ("Plated", "bark = plated", "Old black pine: a brick bond of | and _ inside the trunk; the main branches heavy, two rows thick for most of their length.", 3, dict(ON_CHOKKAN, bark="plated")),
+    ("Twisted", "bark = twisted", "Juniper grain: ( ) edges on straight rows, diagonal grain inside on moving rows, a spiral ( every fourth cell.", 3, dict(ON_CHOKKAN, bark="twisted")),
+    ("Rough", "bark = rough", "Flaking elm or maple: { } edges, % and : flakes inside, a knothole ( ) at mid height; the branches knuckled.", 3, dict(ON_CHOKKAN, bark="rough")),
+    ("Hollow", "bark = hollow", "Sabamiki, the split trunk: a black void inside the lower trunk between ( ) with ragged lips above and below; the branches knuckled.", 3, dict(ON_CHOKKAN, bark="hollow")),
+    ("Deadwood", "deadwood = yes", "A shari of bleached wood up the outside of the first curve, thinning to the edge alone; a jin or two, dead branches -~-' on the side without a live one; on the literati sometimes the apex itself dead.", 4, {"style": "shakan", "foliage": "juniper", "bark": "twisted", "deadwood": "yes"}),
 ]
 PLANTERS = [
     ("Teizan rectangle", "pot = teizan", "Red clay, open lip, two bands, a carved gold key-fret, cloud feet. One of the two run planters.", {"pot": "teizan", "stand": "no"}),
@@ -242,8 +269,15 @@ def main():
     out = rest[0] if rest else "gallery.html"
     forms = []
     for title, setting, note, seed, over in FORMS:
-        body, report = render(mod, cfg, seed, over)
+        body, report = render(mod, cfg, seed, dict(CLASSIC, **over))
         forms.append(card(title, setting, note, body, f"planter here: {report.get('planter', '')}"))
+        print("rendered", title)
+    variations = []
+    for title, setting, note, seed, over in FOLIAGE + BARKS:
+        body, report = render(mod, cfg, seed, over)
+        variations.append(card(title, setting, note, body,
+                               f"{report.get('style', '')}: foliage {report.get('foliage', '')}, bark {report.get('bark', '')}"
+                               f"{', deadwood' if report.get('deadwood') else ''}"))
         print("rendered", title)
     planters = []
     for title, setting, note, over in PLANTERS:
@@ -265,9 +299,12 @@ def main():
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=IBM+Plex+Mono:wght@400;700&family=Source+Sans+3:wght@400;600&display=swap">
 <style>{STYLE}</style></head><body><main>
 <h1>Bonsai Forms and Planters</h1>
-<p class="lede">Every form, every planter and every cloud the screensaver can draw, rendered off-screen at the console's size (135 columns by 120 rows) in the colours the console shows. Each form is shown with the planter it drew; each planter is shown under the same informal upright; each cloud at full strength.</p>
+<p class="lede">Every form, every foliage and bark, every planter and every cloud the screensaver can draw, rendered off-screen at the console's size (135 columns by 120 rows) in the colours the console shows. Each form is shown in cloud foliage and smooth bark with the planter it drew; each foliage on the same informal upright and each bark on the same formal upright; each planter under the same informal upright; each cloud at full strength.</p>
 <p class="key"><span style="color:#ffff55">trunk and branches</span><span style="color:#55ff55">leaves, lit</span><span style="color:#00aa00">leaves, shaded</span><span style="color:#aaaaaa">gravel, cloud bodies</span><span style="color:#ffffff">cloud tops</span><span style="color:#555555">shadow, cloud bases and far clouds</span></p>
 <h2>Forms</h2><section class="grid">{"".join(forms)}</section>
+<h2>Foliage, bark and deadwood</h2>
+<p class="note">Every tree draws a foliage style and a bark to suit its form (each form carries its own table of weights, and a foliage allows only some barks), and a conifer sometimes deadwood. The settings <code>foliage</code>, <code>bark</code> and <code>deadwood</code> name one for every tree; <code>foliages</code> and <code>barks</code> replace the tables.</p>
+<section class="grid">{"".join(variations)}</section>
 <h2>Planters</h2><section class="grid">{"".join(planters)}</section>
 <h2>Sky</h2>
 <p class="note">Clouds drift behind the tree, drawn only where nothing else is: real cloud kinds at their real heights (rows as a share of the screen, from the top), one wind for the whole run, a mood per tree (clear, fair, high or misty). Each enters by the upwind edge or forms in place and dissolves. Two sets: the <em>ink</em> clouds, drawn outlines in three greys, the clouds of the black sky; and the <em>tonal</em> clouds, shaded masses in four greys at three depths (far ones pass behind the summits), the default over the landscape.</p>

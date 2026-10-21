@@ -13,3 +13,8 @@ changed and spliced in again:
   the Cloud class.
 - `landscape_design.md`, `sky_design.md`, `tree_prominence.md` — the reviewer's design
   notes for the landscape, the sky and the tree's prominence.
+- `tree_variations.md`, `tree_variations.py` — the reviewer's design for the foliage
+  styles, the barks, the deadwood and the five added forms (the rules, the numbers, the
+  combination tables), with a specimen generator that prints each piece as text:
+  `python3 tree_variations.py` prints them all, `python3 tree_variations.py tables` the
+  tables. The program's code was written from this by hand; the script is the reference.

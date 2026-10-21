@@ -107,6 +107,8 @@ little in texture. The gallery of every form, planter and cloud is
 | The bare tree, the carpet on the table | A literati, its pads up on the mist |
 | ![A slanting tree in the glazed oval](docs/renders/portrait-shakan-oval.png) | ![The black sky with the ink clouds](docs/renders/black-sky-ink-clouds.png) |
 | A slanting tree in the oval, the second tree of a run | `landscape = no`: the black sky with the ink clouds |
+| ![A windswept pine with deadwood](docs/renders/portrait-fukinagashi.png) | ![A broom with elm foliage](docs/renders/portrait-hokidachi.png) |
+| A windswept tree (fukinagashi) in pine, its pads streaming to the lee | A broom (hokidachi) in elm foliage, the bare fan under the crown |
 
 ![A landscape terminal, 200 by 55](docs/renders/landscape-200x55.png)
 
@@ -157,15 +159,20 @@ restart. A flag on the command line wins over the file.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `style` | `auto` | the tree's form: auto (drawn by the weights in styles), or moyogi (informal upright), chokkan (formal upright), shakan (slanting), bunjin (literati), kengai (cascade) |
-| `styles` | `moyogi:15 chokkan:10 shakan:30 bunjin:30 kengai:15` | how often each form appears, as name:weight |
+| `style` | `auto` | the tree's form: auto (drawn by the weights in styles), or moyogi (informal upright), chokkan (formal upright), shakan (slanting), bunjin (literati), kengai (cascade), fukinagashi (windswept), hokidachi (broom), kabudachi (clump), neagari (exposed root), hankengai (semi-cascade) |
+| `styles` | `moyogi:15 chokkan:10 shakan:30 bunjin:30 kengai:15 fukinagashi:8 hokidachi:8 kabudachi:6 neagari:5 hankengai:8` | how often each form appears, as name:weight |
 | `cycle` | `10m` | every tree gets exactly this long, first cell to the next tree's first cell, by pacing (10m, 600s; 0 = no clock) |
 | `twin` | `auto` | a twin trunk: auto (a fifth of the uprights and slanting trees), yes or no |
 | `height` | `0.6` | the height budget: each form's height scales with it (0.6 = as designed) (0.1 to 1) |
 | `width` | `0.75` | the width budget: each form's spread scales with it (0.75 = as designed) (0.1 to 1) |
-| `leafiness` | `1` | size of the clouds of foliage (0.3 to 3) |
+| `leafiness` | `1.1` | size of the clouds of foliage (0.3 to 3) |
 | `leaves` | `auto` | characters inside a cloud of foliage: auto (drawn per tree: &* broadleaf or *^ needles), or your own |
 | `leaf_edge` | `.,'` | characters around a cloud's edge |
+| `foliage` | `auto` | the foliage style: auto (drawn to suit the form), or cloud (the broadleaf pad), pine (needle tiers), juniper (flat lozenge pads), elm (fine small leaves), willow (weeping strands), tuft (sparse literati tufts), azalea (in bloom), fruit |
+| `foliages` | `auto` | name:weight pairs for the foliage draw; auto = each form's own table |
+| `bark` | `auto` | the bark and branch wood: auto (drawn to suit the form), or smooth, plated (old pine), twisted (juniper grain), rough (flaking, a knothole), hollow |
+| `barks` | `auto` | name:weight pairs for the bark draw; auto = each form's own table |
+| `deadwood` | `auto` | a bleached shari up the trunk and a jin or two: auto (by the form's chance, conifers only), yes or no |
 | `step` | `0.1` | seconds per cell a branch grows sideways (bigger = slower) (0 to 10) |
 | `fronts` | `1` | strokes drawn at the same time (1 = a single pen) (1 to 8) |
 | `aspect` | `2` | how much longer a step up takes than a step sideways (1 to 3) |
@@ -191,8 +198,8 @@ restart. A flag on the command line wins over the file.
 | `sky` | `yes` | clouds drifting behind the tree (no = a black sky) |
 | `clouds` | `auto` | the clouds' set: auto (tonal over a landscape, ink on a black sky), ink (the drawn outlines) or tonal (shaded masses with depth) |
 | `clouds_far` | `2` | how many far clouds come, against the design: the high ones around the peaks, some passing behind them (0 = none, 1 = as designed, 2 = twice) (0 to 5) |
-| `clouds_mid` | `1` | how many mid clouds come, in front of the ranges (0 to 5) |
-| `clouds_near` | `1` | how many near clouds come, the large bright ones (0 to 5) |
+| `clouds_mid` | `1` | how many mid clouds come, in front of the ranges (0 to 5) (0 to 5) |
+| `clouds_near` | `1` | how many near clouds come, the large bright ones (0 to 5) (0 to 5) |
 | `landscape` | `auto` | the mountain landscape behind the clouds: auto (with the sky, when the screen has colours), yes or no; read when the program starts |
 | `seed` | `none` | a number gives the same trees every time; none = random |
 
@@ -207,7 +214,13 @@ and two worked examples, which are in [docs/examples/](docs/examples/) ready to 
 
 **Planning.** A tree is planned in full before the first cell is drawn. A form is drawn
 by weight: the informal upright (moyogi), the formal upright (chokkan), the slanting
-tree (shakan), the literati (bunjin) and the cascade (kengai); a fifth of the informal
+tree (shakan), the literati (bunjin) and the cascade (kengai), and the five added later:
+the windswept tree (fukinagashi, a steep slant with every branch streaming to the lee),
+the broom (hokidachi, a short straight trunk, a fan of fine branches and one rounded
+crown), the clump (kabudachi, three trunks from one base under one canopy), the
+exposed-root tree (neagari, standing on bare root legs, sometimes over a rock) and the
+semi-cascade (hankengai, the cascade's rise, then a run out past the rim that never drops
+below the planter's body); a fifth of the informal
 uprights grow a twin trunk. The trunk is a Catmull-Rom spline through the form's control
 points, sampled once per row and never moving more than two columns a row, tapering from
 a wide base with surface roots. Main branches leave it in turn, shorter as they climb,
@@ -215,6 +228,21 @@ each with a cloud of foliage (a flat-bottomed dome, light at the edge, lit along
 and a twig or two inside it; a back pad behind the trunk gives depth; air is kept between
 families. The tree stands off-centre in its planter as bonsai display practice has it,
 and the whole composition is centred on the screen.
+
+**Foliage, bark and deadwood.** Every tree also draws a foliage style and a bark to suit
+its form, from a table of weights per form (and a foliage allows only some barks: a pine
+is never rough, an elm never twisted). The foliage styles: the cloud (the broadleaf pad as
+it has always been), pine (needle tiers with a dark seam under each), juniper (flat
+lozenge pads, three fanning into one), elm (fine small leaves with light through them),
+willow (a cap and curtains hanging from drooping branches), tuft (the sparse tufts of a
+literati), azalea (the cloud in bloom, red flowers and buds) and fruit (gold fruit hanging
+low). The barks: smooth, plated (old black pine, a brick bond, heavy branches), twisted
+(juniper grain, spiralling), rough (flaking, a knothole, knuckled branches) and hollow
+(the split trunk with a black void). Conifers sometimes carry deadwood: a bleached shari
+up the outside of the first curve, a jin or two where no live branch is, on a literati
+sometimes a dead apex. Pines, junipers, willows and tufts turn gold only in autumn; the
+blooms let go first and the fruit hangs on last. `foliage`, `bark` and `deadwood` name
+one for every tree; `foliages` and `barks` replace the tables.
 
 **Drawing.** Strokes are drawn one after another, bottom up, one cell at a time with a
 bright moving tip; leaves open as buds. Every number in a range is drawn with the tree's
@@ -320,12 +348,13 @@ the program note each tree's start and how far off its mark it was.
 
 ## Design
 
-The forms, the foliage, the planters, the autumn, the growth, the sky and the landscape
-were designed and reviewed over several rounds by a design reviewer working from
-references on bonsai forms and containers, on cloud kinds, on ASCII and text-mode art and
-image halftoning, and on the mountain, cloud and mist conventions of Japanese painting,
-with the renders above as the check. The references are listed in
-[docs/references.md](docs/references.md).
+The forms, the foliage and bark styles, the planters, the autumn, the growth, the sky
+and the landscape were designed and reviewed over several rounds by a design reviewer
+working from references on bonsai forms, species and containers, on cloud kinds, on ASCII
+and text-mode art and image halftoning, and on the mountain, cloud and mist conventions
+of Japanese painting, with the renders above as the check. The references are listed in
+[docs/references.md](docs/references.md); the design sources and notes are in
+[design/](design/), with the brief the next round starts from.
 
 ## Licence
 

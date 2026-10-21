@@ -90,7 +90,8 @@ def virtual_clock(mod):
 def plain_attrs(mod, cfg):
     """Attributes the tools can read back: one number per part."""
     return {"color": {name: 6 for name in mod.COLORS}, "wood": 1, "tip": 2 if cfg["highlight"] else 1,
-            "leaf": (3, 4), "leaf_under": 3, "bud": 5, "moss": 7, "gravel": 6, "shadow": 6, "stand": 6, "turn": [8, 9]}
+            "leaf": (3, 4), "leaf_under": 3, "bud": 5, "moss": 7, "gravel": 6, "shadow": 6, "stand": 6, "turn": [8, 9],
+            "dead": 10, "bloom": 4, "rosebud": 3, "fruit": 4}
 
 
 def colour_attrs(mod, cfg):
@@ -100,12 +101,13 @@ def colour_attrs(mod, cfg):
     return {"color": color, "wood": wood, "tip": wood | BOLD, "leaf": (leaf, leaf | BOLD), "leaf_under": color["black"], "bud": leaf,
             "moss": leaf, "gravel": color["white"], "shadow": color["black"] | BOLD,
             "stand": color[cfg["stand_color"]],
-            "turn": [color[n] | BOLD for n in cfg["autumn_colors"].split()]}
+            "turn": [color[n] | BOLD for n in cfg["autumn_colors"].split()],
+            "dead": (color["magenta"] | BOLD) if mod.PALETTE_WAY else color["white"], "bloom": color["red"] | BOLD, "rosebud": color["red"], "fruit": color["yellow"] | BOLD}
 
 
 def frame(log, until):
     """The screen at time `until`: the characters, and what each cell is."""
-    classes = {1: "w", 2: "t", 3: "l", 4: "L", 5: "b", 6: "p", 7: "m", 8: "y", 9: "r"}
+    classes = {1: "w", 2: "t", 3: "l", 4: "L", 5: "b", 6: "p", 7: "m", 8: "y", 9: "r", 10: "d"}
     chars = [[" "] * W for _ in range(H)]
     kinds = [[" "] * W for _ in range(H)]
     for t, y, x, text, attr in log:

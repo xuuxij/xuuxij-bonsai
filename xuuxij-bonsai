@@ -78,9 +78,58 @@ class Pairs:
 PAIRS = None        # made by make_attrs
 PALETTE_WAY = None  # how the console's palette was set: "linux", "curses" or None
 
-STYLES = ("moyogi", "chokkan", "shakan", "bunjin", "kengai")
+STYLES = ("moyogi", "chokkan", "shakan", "bunjin", "kengai", "fukinagashi", "hokidachi", "kabudachi", "neagari",
+          "hankengai")
 LEAF_SETS = (("&*", 75), ("*^", 25))
 TRUNK_CORE = "ink"  # a trunk three or more wide: its inside on black ("ink") or shaded ▒ ("shade")
+
+# ---- the foliage, bark and deadwood: the collection -----------------------------------------
+# Each tree draws a foliage style and a bark style to suit its form (every form carries
+# its own table of weights), and sometimes deadwood. The foliage style gives the leaf
+# characters inside and at the edge, the pad's shape rule, where the lit band is, the
+# edge, holes, the underside, accents, and its own autumn; "cloud" is the pad as it has
+# always been. Designed from references on bonsai foliage pads, deadwood and species
+# (docs/references.md).
+FOLIAGE = {
+    "cloud":   {"inside": None, "edge": ".,'", "lit": 0.40, "edge_at": 0.80, "hole": 0.0, "under": True,
+                "autumn": None},
+    "pine":    {"inside": "^^*", "edge": "'.", "lit": "tiers", "edge_at": 0.80, "hole": 0.0, "under": True,
+                "autumn": "yellow", "seam": ".^"},
+    "juniper": {"inside": "%&", "edge": ".,", "lit": 0.35, "edge_at": 0.78, "hole": 0.0, "under": True,
+                "autumn": "yellow", "twigs": 2},
+    "elm":     {"inside": ":;*\":;*", "edge": ".,", "lit": 0.40, "edge_at": 0.80, "hole": 0.02, "under": True,
+                "autumn": None},
+    "willow":  {"inside": "&*", "edge": ".,'", "lit": "top", "edge_at": 0.80, "hole": 0.0, "under": False,
+                "autumn": "yellow", "twigs": 0, "strand": "|||;:"},
+    "tuft":    {"inside": "^^*'", "edge": "'.", "lit": "top", "edge_at": 0.80, "hole": 0.15, "under": False,
+                "autumn": "yellow"},
+    "azalea":  {"inside": "&*", "edge": ".,'", "lit": 0.40, "edge_at": 0.80, "hole": 0.0, "under": True,
+                "autumn": None, "accent": (("@", "bloom", 0.14), ("o", "rosebud", 0.04))},
+    "fruit":   {"inside": "&*", "edge": ".,'", "lit": 0.40, "edge_at": 0.80, "hole": 0.0, "under": True,
+                "autumn": None, "accent": (("o", "fruit", 0.06),)},
+}
+FOLIAGE_BY_FORM = {  # the built-in forms' tables; a form file may carry its own
+    "moyogi":  {"cloud": 45, "pine": 15, "juniper": 10, "elm": 10, "willow": 6, "azalea": 8, "fruit": 6},
+    "chokkan": {"cloud": 35, "pine": 40, "elm": 15, "fruit": 10},
+    "shakan":  {"cloud": 30, "pine": 25, "juniper": 25, "willow": 5, "azalea": 10, "fruit": 5},
+    "bunjin":  {"cloud": 20, "pine": 35, "juniper": 20, "tuft": 25},
+    "kengai":  {"cloud": 30, "pine": 30, "juniper": 40},
+}
+BARKS = ("smooth", "plated", "twisted", "rough", "hollow")
+BARK_BY_FORM = {
+    "moyogi":  {"smooth": 50, "plated": 15, "rough": 20, "hollow": 10, "twisted": 5},
+    "chokkan": {"smooth": 45, "plated": 35, "rough": 15, "hollow": 5},
+    "shakan":  {"smooth": 45, "plated": 15, "twisted": 30, "rough": 10},
+    "bunjin":  {"smooth": 40, "twisted": 50, "plated": 10},
+    "kengai":  {"smooth": 45, "twisted": 45, "plated": 10},
+}
+BARK_BY_FOLIAGE = {  # the barks a foliage may be drawn with
+    "cloud": "smooth plated rough hollow twisted", "pine": "smooth plated twisted", "juniper": "smooth twisted",
+    "elm": "smooth rough hollow", "willow": "smooth rough", "tuft": "smooth twisted plated",
+    "azalea": "smooth rough", "fruit": "smooth rough hollow",
+}
+DEADWOOD_BY_FORM = {"bunjin": 0.5, "shakan": 0.3, "kengai": 0.4, "chokkan": 0.15, "moyogi": 0.1}
+CONIFERS = ("pine", "juniper", "tuft")  # the foliage that takes deadwood
 
 # ---- the forms, as numbers ---------------------------------------------------------------
 # Each built-in form is a set of numbers; a user's own form (a file in ~/.config/
@@ -128,6 +177,50 @@ FORMS = {
         "branch_length": (8, 14), "twigs": 0, "pads": ((8, 12), (3, 4)), "apex_pad": 0.6,
         "back_pad": False, "planting": ((0.35, 0.40), "opposite_apex"), "roots": ("_/", "\\_"),
     },
+    # The five forms of the variations round, designed from references on the bonsai
+    # styles (docs/references.md); each carries its own foliage and bark tables.
+    "fukinagashi": {  # windswept: a steep slant, every branch streaming to the lee
+        "height": (0.45, 0.55), "spread": (0.65, 0.80), "trunk_width": ("by_height", 8.0, 6, 8),
+        "line": "lean", "lean": (0.90, 1.20), "bow": (4, 7), "branches": (3, 4), "first_branch": (0.35, 0.45),
+        "first_side": "with", "sides": "lee", "profile": "wind", "branch_length": (18, 30),
+        "length_taper": 0.10, "twigs": 1, "pads": ((12, 16), (3, 4)), "apex_pad": 0.7, "back_pad": False,
+        "planting": (0.30, "away_from_lean"), "roots": "lean",
+        "foliage": {"pine": 45, "juniper": 30, "tuft": 25}, "bark": {"twisted": 50, "smooth": 30, "plated": 20},
+        "deadwood": 0.6,
+    },
+    "hokidachi": {  # broom: a short straight trunk, a fan of fine branches, one rounded crown
+        "height": (0.50, 0.58), "spread": (0.60, 0.72), "trunk_width": ("by_height", 7.0, 7, 9),
+        "line": "straight", "movement": 0, "apex": 0, "trunk_top": (0.30, 0.38), "branches": (5, 7),
+        "first_branch": 0.0, "first_side": "either", "profile": "fan", "branch_length": "by_spread",
+        "fan_height": (0.55, 0.65), "twigs": 2, "pads": "crown", "apex_pad": 0.0, "back_pad": False,
+        "planting": (0.50, "left"), "roots": ("__/", "\\__"),
+        "foliage": {"elm": 55, "cloud": 45}, "bark": {"rough": 50, "smooth": 35, "hollow": 15},
+    },
+    "kabudachi": {  # clump: three trunks from one base, the thickest the tallest, one canopy
+        "height": (0.50, 0.60), "spread": (0.60, 0.75), "trunk_width": ("by_height", 8.0, 6, 8),
+        "line": "s-curve", "movement": (4, 8), "apex": (-3, 3), "branches": (2, 3), "first_branch": 0.55,
+        "first_side": "outside", "profile": "curve", "branch_length": "by_spread", "twigs": 1,
+        "pads": ((10, 16), (4, 6)), "apex_pad": 1.0, "back_pad": False,
+        "trunks": (((0.62, 0.72), "opposite_first_curve", 0.70, (8, 12)),   # (height share, side, width share, lean)
+                   ((0.42, 0.52), "first_curve", 0.55, (10, 14))),
+        "trunk_branches": (1, 2), "planting": (0.50, "left"), "roots": ("___/", "\\___"),
+        "foliage": {"cloud": 40, "elm": 25, "pine": 20, "azalea": 15}, "bark": {"smooth": 50, "rough": 35, "hollow": 15},
+    },
+    "neagari": {  # exposed root: the trunk stands on bare root legs, sometimes clasping a rock
+        "height": (0.58, 0.68), "spread": (0.40, 0.55), "trunk_width": ("drawn", 4, 6),
+        "line": "s-curve", "movement": (6, 10), "apex": (-4, 8), "branches": (2, 3), "first_branch": (0.55, 0.62),
+        "first_side": "outside", "profile": "curve", "branch_length": (10, 16), "twigs": 1, "pads": "by_branch",
+        "apex_pad": 1.0, "back_pad": False, "roots": "stilts", "root_height": (0.25, 0.35), "root_legs": (3, 4),
+        "rock": 0.3, "planting": (0.50, "left"),
+        "foliage": {"azalea": 30, "elm": 30, "cloud": 25, "tuft": 15}, "bark": {"smooth": 60, "rough": 40},
+    },
+    "hankengai": {  # semi-cascade: the cascade's rise and crown, then a run out past the rim
+        "rise": (18, 24), "crown": ((8, 10), (3, 4)), "out": (18, 26), "drop": (4, 7),
+        "thick": ((2, 0.5), (1, 1.0)),  # (rows thick, until this share of the run)
+        "fall_branches": (2, 3), "fall_pads": ((7, 10), (2, 3)), "trunk_width": 5, "planting": 0.35,
+        "foliage": {"pine": 35, "juniper": 35, "cloud": 20, "tuft": 10}, "bark": {"twisted": 45, "smooth": 35, "plated": 20},
+        "deadwood": 0.4,
+    },
 }
 USER_FORMS = {}  # name -> the resolved numbers, from the user's style files
 USER_POTS = {}   # name -> (rows, (body, trim)), from the user's planter files
@@ -143,8 +236,11 @@ def rng_range(rng, value):
 SETTINGS = {
     "style":       ("auto", "style", None, None, "the tree's form: auto (drawn by the weights in styles), or "
                                                  "moyogi (informal upright), chokkan (formal upright), shakan "
-                                                 "(slanting), bunjin (literati), kengai (cascade)"),
-    "styles":      ("moyogi:15 chokkan:10 shakan:30 bunjin:30 kengai:15", "weights", None, None,
+                                                 "(slanting), bunjin (literati), kengai (cascade), fukinagashi "
+                                                 "(windswept), hokidachi (broom), kabudachi (clump), neagari "
+                                                 "(exposed root), hankengai (semi-cascade)"),
+    "styles":      ("moyogi:15 chokkan:10 shakan:30 bunjin:30 kengai:15 fukinagashi:8 hokidachi:8 kabudachi:6 "
+                    "neagari:5 hankengai:8", "weights", None, None,
                     "how often each form appears, as name:weight"),
     "cycle":       ("10m", "duration", None, None, "every tree gets exactly this long, first cell to the next "
                                                    "tree's first cell, by pacing (10m, 600s; 0 = no clock)"),
@@ -155,6 +251,17 @@ SETTINGS = {
     "leaves":      ("auto", "leaves", None, None, "characters inside a cloud of foliage: auto (drawn per tree: "
                                                   "&* broadleaf or *^ needles), or your own"),
     "leaf_edge":   (".,'", str, None, None, "characters around a cloud's edge"),
+    "foliage":     ("auto", "foliage", None, None, "the foliage style: auto (drawn to suit the form), or cloud "
+                    "(the broadleaf pad), pine (needle tiers), juniper (flat lozenge pads), elm (fine small "
+                    "leaves), willow (weeping strands), tuft (sparse literati tufts), azalea (in bloom), fruit"),
+    "foliages":    ("auto", "foliage_weights", None, None, "name:weight pairs for the foliage draw; auto = "
+                    "each form's own table"),
+    "bark":        ("auto", "bark", None, None, "the bark and branch wood: auto (drawn to suit the form), or "
+                    "smooth, plated (old pine), twisted (juniper grain), rough (flaking, a knothole), hollow"),
+    "barks":       ("auto", "bark_weights", None, None, "name:weight pairs for the bark draw; auto = each "
+                    "form's own table"),
+    "deadwood":    ("auto", "tristate", None, None, "a bleached shari up the trunk and a jin or two: auto (by "
+                    "the form's chance, conifers only), yes or no"),
     "step":        (0.10, float, 0.0, 10.0, "seconds per cell a branch grows sideways (bigger = slower)"),
     "fronts":      (1, int, 1, 8, "strokes drawn at the same time (1 = a single pen)"),
     "aspect":      (2.0, float, 1.0, 3.0, "how much longer a step up takes than a step sideways"),
@@ -567,12 +674,12 @@ def load_user_form(path):
         elif key == "back_pad":
             spec[key] = text.lower() in ("yes", "true", "1")
         elif key == "first_side":
-            if text.lower() not in ("outside", "away", "either"):
-                raise ValueError(f"{path} line {number}: first side must be outside, away or either")
+            if text.lower() not in ("outside", "away", "either", "with"):
+                raise ValueError(f"{path} line {number}: first side must be outside, away, either or with")
             spec[key] = text.lower()
         elif key == "profile":
-            if text.lower() not in ("curve", "chokkan", "shakan"):
-                raise ValueError(f"{path} line {number}: profile must be curve, chokkan or shakan")
+            if text.lower() not in ("curve", "chokkan", "shakan", "wind", "droop"):
+                raise ValueError(f"{path} line {number}: profile must be curve, chokkan, shakan, wind or droop")
             spec[key] = text.lower()
         elif key == "leaves":
             spec[key] = text
@@ -676,6 +783,27 @@ def convert(key, raw):
         if not text:
             raise ValueError("leaves needs at least one character, or auto")
         return text
+    if kind in ("foliage", "bark"):
+        names = tuple(FOLIAGE) if kind == "foliage" else BARKS
+        if text.lower() == "auto":
+            return "auto"
+        if text.lower() not in names:
+            raise ValueError(f"{key} must be auto or one of {', '.join(names)}, not {text!r}")
+        return text.lower()
+    if kind in ("foliage_weights", "bark_weights"):
+        names = tuple(FOLIAGE) if kind == "foliage_weights" else BARKS
+        if text.lower() == "auto":
+            return "auto"
+        weights = {}
+        for item in text.lower().split():
+            name, _sep, number = item.partition(":")
+            if name not in names or not number.isdigit():
+                raise ValueError(f"{key} must be auto or name:weight pairs with names from "
+                                 f"{', '.join(names)}, not {item!r}")
+            weights[name] = int(number)
+        if not any(weights.values()):
+            raise ValueError(f"{key} needs at least one weight above 0")
+        return " ".join(f"{n}:{w}" for n, w in weights.items())
     if kind == "pot":
         name = text.lower()
         if name in ("yes", "true", "on", "1", "auto"):
@@ -845,6 +973,10 @@ def make_attrs(cfg, live=True):
             "gravel": color["white"], "shadow": color["black"] | curses.A_BOLD,
             "stand": color[cfg["stand_color"]],
             "turn": [color[name] | curses.A_BOLD for name in cfg["autumn_colors"].split()],
+            # bleached deadwood: the clouds' white over the landscape (the brightest grey the
+            # palette keeps), the console's white on a black sky
+            "dead": color["magenta"] | curses.A_BOLD if PALETTE_WAY else color["white"],
+            "bloom": color["red"] | curses.A_BOLD, "rosebud": color["red"], "fruit": color["yellow"] | curses.A_BOLD,
             # The clouds' three greys: over a landscape (its palette set) the tops take the
             # magenta slot, which the landscape leaves free, so the clouds keep their own
             # light however dim the landscape is; on a plain console, bold white.
@@ -2625,8 +2757,9 @@ class Stroke:
         self.cover = set()   # cells of this twig its own cloud may grow over
 
 
-TRUNK_KINDS = ("trunk", "twin", "fall")
-BRANCH_KINDS = ("primary", "secondary", "fallb")
+TRUNK_KINDS = ("trunk", "twin", "fall", "root", "rock")
+BRANCH_KINDS = ("primary", "secondary", "fallb", "jin")
+CASCADES = ("kengai", "hankengai")  # the forms with their own planner, laid out over the planter
 
 
 class Tree:
@@ -2655,12 +2788,24 @@ class Tree:
         self.spec = USER_FORMS.get(self.style) or FORMS.get(self.style)
         self.twin = self.style == "moyogi" and (cfg["twin"] == "yes"
                                                 or (cfg["twin"] == "auto" and rng.random() < 0.2))
+        # The foliage, the bark and the deadwood: drawn to suit the form.
+        self.foliage = self.draw_foliage()
+        self.bark = self.draw_bark()
+        self.deadwood = self.draw_deadwood()
+        self.topjin = self.deadwood and self.style in ("bunjin", "fukinagashi") and rng.random() < 0.5
+        self.accents = {}  # a leaf cell that is a bloom, a bud or a fruit
+        self.jins = []
+        inside = FOLIAGE[self.foliage]["inside"]
         if cfg["leaves"] != "auto":
             self.leaf_set = cfg["leaves"]
         elif self.spec and "leaves" in self.spec:
             self.leaf_set = self.spec["leaves"]
-        else:
+        elif inside is None:
             self.leaf_set = self.draw_leaves()
+        else:
+            self.leaf_set = inside
+        default_edge = SETTINGS["leaf_edge"][0]
+        self.leaf_edge = cfg["leaf_edge"] if cfg["leaf_edge"] != default_edge else FOLIAGE[self.foliage]["edge"]
         if self.planter:
             self.pot_kind, self.stand_kind = self.planter[0], self.planter[1]
         else:
@@ -2672,9 +2817,10 @@ class Tree:
         total = block_height(self.pot_kind, self.stand_kind) if self.pot_kind != "no" else 0
         self.base = self.H - total + 1 if self.pot_kind != "no" else self.H - 1
         self.report.update({"style": self.style, "twin": self.twin, "leaves": self.leaf_set,
+                            "foliage": self.foliage, "bark": self.bark, "deadwood": self.deadwood,
                             "planter": f"{self.pot_kind} on {self.stand_kind or 'no stand'}"
                                        + (" (kept)" if self.planter else "")})
-        if self.style == "kengai":
+        if self.style in CASCADES:
             self.first_side = rng.choice((-1, 1))  # the fall side, needed before planning
             if self.planter:  # the cascade is planned in place over the planter it has
                 _k, _s, width, x0, _sw, _sx0 = self.planter
@@ -2687,9 +2833,9 @@ class Tree:
         for _attempt in range(6):
             rng.setstate(state)
             self.plan(shrink)
-            if self.style != "kengai":
+            if self.style not in CASCADES:
                 self.layout_pot()
-            if self.planter and self.style != "kengai":
+            if self.planter and self.style not in CASCADES:
                 _k, _s, width, x0, _sw, _sx0 = self.planter
                 self.translate(x0 + self.planting_offset(width) - self.cx)
             lo, hi = self.composition_box()
@@ -2719,6 +2865,8 @@ class Tree:
             weights[name] = int(number)
         if self.cfg["stand"] == "no" or self.cfg["pot"] == "no" or self.H < 100:
             weights["kengai"] = 0  # a cascade needs its tall stand, and the height to hang beside it
+        if self.cfg["pot"] == "no" or self.H < 80:
+            weights["hankengai"] = 0  # a semi-cascade needs a planter's body to run down beside
         for name, spec in USER_FORMS.items():  # the user's forms join the draw by their weight
             weights.setdefault(name, spec.get("weight", 10))
         if self.planter:  # the forms that suit the planter already standing there
@@ -2731,6 +2879,48 @@ class Tree:
 
     def draw_leaves(self):
         return self.rng.choices([s for s, _w in LEAF_SETS], [w for _s, w in LEAF_SETS])[0]
+
+    def draw_from(self, table, names):
+        """One name from a weights table (a dict, a "name:weight" string or a name)."""
+        if isinstance(table, str) and ":" not in table:
+            table = {table: 1}
+        elif isinstance(table, str):
+            table = {item.partition(":")[0]: int(item.partition(":")[2]) for item in table.split()}
+        picks = [n for n in table if n in names and table[n] > 0]
+        return self.rng.choices(picks, [table[n] for n in picks])[0] if picks else None
+
+    def draw_foliage(self):
+        cfg = self.cfg
+        if cfg["foliage"] != "auto":
+            return cfg["foliage"]
+        table = cfg["foliages"] if cfg["foliages"] != "auto" else \
+            (self.spec.get("foliage") if self.spec else None) or FOLIAGE_BY_FORM.get(self.style) or {"cloud": 1}
+        return self.draw_from(table, FOLIAGE) or "cloud"
+
+    def draw_bark(self):
+        """The bark to suit the form, among those its foliage allows."""
+        cfg = self.cfg
+        if cfg["bark"] != "auto":
+            return cfg["bark"]
+        table = cfg["barks"] if cfg["barks"] != "auto" else \
+            (self.spec.get("bark") if self.spec else None) or BARK_BY_FORM.get(self.style) or {"smooth": 1}
+        allowed = BARK_BY_FOLIAGE.get(self.foliage, "smooth").split()
+        for _try in range(6):
+            bark = self.draw_from(table, BARKS)
+            if bark in allowed:
+                return bark
+        return "smooth"
+
+    def draw_deadwood(self):
+        cfg = self.cfg
+        if cfg["deadwood"] == "yes":
+            return True
+        if cfg["deadwood"] == "no" or self.foliage not in CONIFERS or self.bark in ("rough", "hollow"):
+            return False
+        chance = (self.spec.get("deadwood") if self.spec else None)
+        if not isinstance(chance, (int, float)):
+            chance = DEADWOOD_BY_FORM.get(self.style, 0.0)
+        return self.rng.random() < chance
 
     def pot_for(self):
         """The planter and stand for this form (a forced pot wins; the stand setting
@@ -2784,11 +2974,16 @@ class Tree:
         cfg, rng = self.cfg, self.rng
         self.strokes, self.wood, self.trunk_rows = [], {}, {}
         self.families, self.clouds = [], 0
+        self.jins, self.accents = [], {}
+        self.extra_trunks, self.legs, self.lift = [], [], 0  # the clump's other trunks; the root legs; rows they lift the trunk
         self.pot_rows, self.pot_spec, self.rim, self.stand_span, self.stand_top = [], None, None, None, None
         self.blocked, self.pot_cols = set(), set()
         B = self.base
         if self.style == "kengai":
             self.plan_kengai(shrink)
+            return
+        if self.style == "hankengai":
+            self.plan_hankengai(shrink)
             return
         spec = self.spec
         r_share = self.draw_for_forms("height", lambda v: rng_range(rng, v))
@@ -2809,6 +3004,13 @@ class Tree:
         self.w0 = w0
         s = rng.choice((-1, 1))  # the side of the trunk's first movement, or of the lean
         self.first_side = s
+        if self.style == "hokidachi":
+            self.plan_hokidachi(R, S, w0)
+            return
+        if spec.get("roots") == "stilts":  # the trunk's line starts above its root legs
+            self.lift = max(3, int(round(rng_range(rng, spec["root_height"]) * R)))
+            R = max(8, R - self.lift)
+            self.R = R
         # The trunk's line.
         line = spec["line"]
         if line == "s-curve":
@@ -2818,7 +3020,7 @@ class Tree:
         elif line == "straight":
             points = [(0, 0), (R, 0)]
         elif line == "lean":
-            lean = rng_range(rng, spec["lean"]) * R * s
+            lean = rng_range(rng, spec["lean"]) * R * s * (shrink if spec.get("sides") == "lee" else 1.0)
             bow = rng_range(rng, spec["bow"])
             points = [(0, 0), (0.25 * R, lean * 0.25 - s * bow * 0.7), (0.5 * R, lean * 0.5 - s * bow),
                       (0.75 * R, lean * 0.75 - s * bow * 0.7), (R, lean)]
@@ -2832,40 +3034,120 @@ class Tree:
         if line == "straight" and rng.random() < 0.5:
             h = rng.randint(R // 4, 3 * R // 4)
             path[h] += rng.choice((-1, 1))  # at most one wobble
-        self.trunk_path = {B - h: self.cx + x for h, x in path.items()}
+        self.trunk_path = {B - self.lift - h: self.cx + x for h, x in path.items()}
         self.report.update({"R": R, "S": S, "w0": w0, "control points": [(h, round(x, 1)) for h, x in points],
                             "apex offset": path[R] - path[0]})
         nebari = spec["roots"]
         if nebari == "lean":  # three roots on the outer side of the lean, one inside
             nebari = ("___/", "\\_") if s > 0 else ("_/", "\\___")
-        trunk = self.make_trunk("trunk", [(B - h, self.cx + path[h]) for h in range(R + 1)], w0, nebari)
+        elif nebari == "stilts":
+            nebari = None
+        trunk = self.make_trunk("trunk", [(B - self.lift - h, self.cx + path[h]) for h in range(R + 1)], w0, nebari)
+        if self.lift:
+            self.plan_legs(w0)
         twin = self.plan_twin(trunk, R, S, w0, s) if self.twin else None
-        groups = self.plan_primaries(trunk, R, S, s)
         if twin is not None:
-            groups += self.plan_twin_primaries(twin, S)
+            self.extra_trunks.append((twin, self.twin_path, self.twin_R, self.twin_side))
+        for share, side_rule, wshare, lean in spec.get("trunks", ()):  # the clump's other trunks
+            t = self.plan_twin(trunk, R, S, w0, s, fork=(1, 2), share=share, apex=lean, wshare=wshare,
+                               side=-s if side_rule == "opposite_first_curve" else s)
+            if t is not None:
+                self.extra_trunks.append((t, self.twin_path, self.twin_R, self.twin_side))
+        groups = self.plan_primaries(trunk, R, S, s)
+        for i, (t, tpath, R2, s2) in enumerate(self.extra_trunks):
+            count = 2 if t is twin else rng.randint(*spec["trunk_branches"])
+            groups += self.plan_twin_primaries(t, S, R2, s2, tpath, count, 10 * (i + 1))
+        self.plan_jins(trunk, R, groups)
         back = self.plan_back_pad(trunk, R, groups)
         self.plan_clouds(trunk, twin, groups, back)
 
     def make_trunk(self, kind, cells_xy, w0, nebari=None, taper_from=0, taper_total=None):
         """A trunk stroke along the rows of `cells_xy` (bottom first), tapering from w0
-        at its start, bark glyphs at the edges by the slope, roots on the first row."""
+        at its start, its edges and inside in the tree's bark (smooth lines; plated
+        brick; twisted grain that turns with the movement; rough flakes with a knothole;
+        a hollow with its black void and ragged lips), a shari of bleached deadwood up
+        the outside of the first curve when the tree has one, roots on the first row.
+        A cell's paint: b bark on the ground, k the ink inside, v the void, d deadwood."""
         s = Stroke(kind)
+        rng = self.rng
         n = len(cells_xy)
         total = taper_total or n
+        bark = self.bark
+        widths = [max(1, int(round(1 + (w0 - 1) * (1 - min(1.0, (taper_from + i) / max(1, total - 1))) ** 1.15)))
+                  for i in range(n)]
+        first_dx = next((cells_xy[i + 1][1] - cells_xy[i][1] for i in range(n - 1)
+                         if cells_xy[i + 1][1] != cells_xy[i][1]), 1)
+        shari_side = -1 if first_dx > 0 else 1  # the outside of the first curve
+        shari_top = rng.uniform(0.55, 0.75) if (self.deadwood and kind == "trunk") else 0.0
+        void = {i for i in range(n) if bark == "hollow" and widths[i] >= 5
+                and 0.10 <= i / max(1, n - 1) < 0.45}  # of this stroke's own height
+        uro_row = None
+        if bark == "rough":
+            wide = [i for i in range(n) if widths[i] >= 6 and 0.40 <= (taper_from + i) / max(1, total - 1) <= 0.55]
+            uro_row = rng.choice(wide) if wide else None
         for i, (y, x) in enumerate(cells_xy):
-            t = min(1.0, (taper_from + i) / max(1, total - 1))
-            w = max(1, int(round(1 + (w0 - 1) * (1 - t) ** 1.15)))
+            w = widths[i]
+            share = (taper_from + i) / max(1, total - 1)
             dx = cells_xy[i + 1][1] - x if i + 1 < n else 0
-            glyph = "|" if dx == 0 or (nebari and i < 2) else ("/" if dx > 0 else "\\")
-            core = "▒" if TRUNK_CORE == "shade" else "|"
-            text = glyph + core * (w - 2) + glyph if w >= 3 else glyph * w
+            moving = dx != 0 and not (nebari and i < 2)
+            diag = "/" if dx > 0 else "\\"
+            if bark == "twisted" and not moving and w >= 4:  # narrower rows take smooth edges
+                edge_l, edge_r = "(", ")"
+            elif bark == "rough" and not moving and w >= 2:
+                edge_l, edge_r = "{", "}"
+            else:
+                edge_l = edge_r = diag if moving else "|"
+            core, paint = [], []
+            for k in range(max(0, w - 2)):
+                if bark == "plated":
+                    ch = "|" if (k + i // 3) % 4 == 0 else "_"  # plates four wide, three rows tall
+                elif bark == "twisted":
+                    ch = diag if moving else ("(" if w >= 4 and (k - i) % 4 == 0 else "|")
+                elif bark == "rough":
+                    r = rng.random()
+                    ch = "|" if r < 0.78 else "%" if r < 0.90 else ":"
+                elif TRUNK_CORE == "shade":
+                    ch = "▒"
+                else:
+                    ch = "|"
+                core.append(ch)
+                paint.append("k")
+            if i in void:
+                core = ["("] + [" "] * (w - 4) + [")"]
+                paint = ["k"] + ["v"] * (w - 4) + ["k"]
+            elif void and i == max(void) + 1 and w >= 3:
+                core = ["'"] * (w - 2)
+            elif void and i == min(void) - 1 and w >= 3:
+                core = ["."] * (w - 2)
+            if uro_row is not None and i == uro_row and len(core) >= 4:
+                core[2:4] = ["(", ")"]  # the knothole (uro)
+            edge_paint = ["b", "b"]
+            if shari_top:  # the bleached strip: three cells at the base, thinning to the edge alone
+                strip = 2 if share < 0.20 else 1 if share < 0.40 else 0
+                for k in range(min(strip, len(core))):
+                    kk = k if shari_side < 0 else len(core) - 1 - k
+                    core[kk] = diag if moving else rng.choice("|:")  # the strip's own texture
+                    paint[kk] = "d"
+                if share < shari_top:
+                    edge_paint[0 if shari_side < 0 else 1] = "d"
+            if w >= 3:
+                text = edge_l + "".join(core) + edge_r
+                pnt = edge_paint[0] + "".join(paint) + edge_paint[1]
+            elif w == 2:
+                text, pnt = edge_l + edge_r, "".join(edge_paint)
+            else:
+                text, pnt = edge_l, edge_paint[0]
             x0 = x - w // 2
             if w >= 3 and TRUNK_CORE == "ink":  # the inside of the trunk: an ink mass with bark lines
                 self.ink.update((y, cx) for cx in range(x0 + 1, x0 + w - 1))
             if i == 0 and nebari:
                 left, right = nebari
-                text, x0 = left + text + right, x0 - len(left)
-            s.cells.append((y, x0, text, None))
+                text, pnt, x0 = left + text + right, "b" * len(left) + pnt + "b" * len(right), x0 - len(left)
+            if self.topjin and kind == "trunk" and i >= n - 3:  # the top jin: the apex died back
+                pnt = "j" * len(text)
+                if i == n - 1:
+                    text = "'" * len(text)
+            s.cells.append((y, x0, text, pnt))
             self.trunk_rows.setdefault(y, (x0, len(text)))
             if kind == "trunk":
                 self.trunk_rows[y] = (x0, len(text))
@@ -2893,13 +3175,13 @@ class Tree:
         return heights
 
     def plan_primaries(self, trunk, R, S, s):
-        cfg, rng, B = self.cfg, self.rng, self.base
+        cfg, rng, B = self.cfg, self.rng, self.base - self.lift
         spec = self.spec
         n = self.draw_for_forms("branches", lambda v: rng.randint(*v))
         f1 = self.draw_for_forms("first_branch", lambda v: rng_range(rng, v))
         heights = self.primary_heights(n, f1)
         either = rng.choice((-1, 1))  # drawn for every form, used when the first side is free
-        first = {"outside": s, "away": -s}.get(spec["first_side"]) or either
+        first = {"outside": s, "away": -s, "with": s}.get(spec["first_side"]) or either
         L0 = S / 2 - 4
         groups, listing = [], []
         side = first
@@ -2914,17 +3196,67 @@ class Tree:
             start_x = x0 + w if side > 0 else x0 - 1
             least = max(4, int(round(10 * self.scale)))
             if spec["branch_length"] == "by_spread":
-                length = max(least, int(round(L0 * (1 - 0.17 * k))))
+                length = max(least, int(round(L0 * (1 - spec.get("length_taper", 0.17) * k))))
             else:
                 length = max(4, int(round(rng.randint(*spec["branch_length"]) * self.scale)))
-            p = self.plan_branch("primary", y, start_x, side, length, spec["profile"])
+            profile = spec["profile"]
+            if self.foliage == "willow":
+                profile = "droop"  # the cap hangs at the branch's lowest point
+            elif self.foliage == "pine" and self.style == "chokkan" and rng.random() < 0.4:
+                profile = "droop"  # old pines sag
+            p = self.plan_branch("primary", y, start_x, side, length, profile)
             if p is not None:
-                secs = self.plan_secondaries(p, side) if spec["twigs"] else []
+                secs = self.plan_secondaries(p, side) if self.twigs_for() else []
                 groups.append((p, secs, k))
                 listing.append((round(h, 2), len(p.cells)))
-            side = -side
+            if spec.get("sides") != "lee":  # the windswept tree's branches all stream one way
+                side = -side
         self.report["primaries (height share, length)"] = listing
         return groups
+
+    def plan_jins(self, trunk, R, groups):
+        """A jin or two when the tree has deadwood: a dead branch bleached white, three
+        to six cells of -~-' at 55-70% of the trunk's height on a side with no live
+        branch near, its last cell a row up; it draws right after the trunk."""
+        if not self.deadwood:
+            return
+        rng, B = self.rng, self.base - self.lift
+        taken = {}  # row -> the sides with a live branch within three rows
+        for p, _secs, _k in groups:
+            y0, x0 = p.cells[0][:2]
+            side = 1 if y0 in self.trunk_rows and x0 >= self.trunk_rows[y0][0] + self.trunk_rows[y0][1] else -1
+            for y in range(y0 - 3, y0 + 4):
+                taken.setdefault(y, set()).add(side)
+        for _j in range(1 + (rng.random() < 0.35)):
+            for _try in range(8):
+                y = B - int(round(rng.uniform(0.55, 0.70) * R))
+                sides = [sd for sd in (-1, 1) if sd not in taken.get(y, ())]
+                if y not in self.trunk_rows or not sides:
+                    continue
+                side = rng.choice(sides)
+                x0, w = self.trunk_rows[y]
+                x = x0 + w if side > 0 else x0 - 1
+                length = rng.randint(3, 6)
+                cells = []
+                for k in range(length):
+                    cy = y - (1 if k == length - 1 else 0)
+                    cx = x + side * k
+                    if not (0 <= cx < self.W) or (cy, cx) in self.wood or (cy, cx) in self.blocked:
+                        break
+                    cells.append((cy, cx, "'" if k == length - 1 else "-~"[k % 2], "j"))
+                if len(cells) < 3:
+                    continue
+                s = Stroke("jin")
+                s.cells = cells
+                for cy, cx, _g, _p in cells:
+                    self.wood[(cy, cx)] = s
+                self.strokes.append(s)
+                self.jins.append(s)
+                for yy in range(y - 3, y + 4):
+                    taken.setdefault(yy, set()).add(side)
+                break
+        if self.jins:
+            self.report["jins"] = [(s.cells[0][0], len(s.cells)) for s in self.jins]
 
     def plan_secondaries(self, p, side):
         rng = self.rng
@@ -2936,15 +3268,28 @@ class Tree:
             if sec is not None:
                 secs.append(sec)
                 break
+        if self.twigs_for() >= 2:  # a juniper's second twig, lower down: three pads fan into one
+            for try_at in (0.35, 0.38, 0.32):
+                jy, jx, _t, _a = p.cells[min(len(p.cells) - 2, int(len(p.cells) * try_at))]
+                length = max(3, int(round(rng.randint(5, 7) * self.scale)))
+                sec = self.plan_branch("secondary", jy - 1, jx + side, side, length, "twig")
+                if sec is not None:
+                    secs.append(sec)
+                    break
         return secs
 
-    def plan_branch(self, kind, y, x, side, length, profile):
+    def plan_branch(self, kind, y, x, side, length, profile, slope=None, thick=True):
         """A branch as one line, by profile: `curve` dips then rises; `chokkan` runs
         level then rises gently; `shakan` runs level after one early dip; `fallb`
-        rises gently all along; `twig` rises steeply from its first cell."""
+        rises gently all along; `twig` rises steeply from its first cell; `wind` runs
+        level lifting a row every eight cells and drops its tip; `droop` runs level then
+        falls a row every three cells; `fan` climbs steeply from its first cell. Rough
+        and hollow bark knuckle a branch (a jog every three to five cells, sagging after
+        a dip); plated bark makes it heavy (two rows thick for most of its length)."""
         rng = self.rng
         s = Stroke(kind)
         cap_on = profile == "curve"
+        knuckled = self.bark in ("rough", "hollow")
         if profile == "curve":
             s0 = -1 / rng.uniform(3.5, 4.5) if rng.random() < 0.7 else 0.0
             s1 = 1 / rng.uniform(2.0, 2.5)
@@ -2952,17 +3297,24 @@ class Tree:
             s0 = s1 = 1 / rng.uniform(1.5, 2.0)
         elif profile == "fallb":
             s0 = s1 = 1 / 5.0
+        elif profile == "wind":
+            s0 = s1 = 1 / 8.0
+        elif profile == "fan":
+            s0 = s1 = slope if slope is not None else 1 / 1.4
         else:
             s0 = s1 = 0.0
-        acc = 0.95 if profile == "twig" else 0.0
+        acc = 0.95 if profile == "twig" else s0 if profile == "fan" else 0.0  # a fan branch leaves at its slope
         dip_at = int(round(length * rng.uniform(0.10, 0.25))) if profile == "shakan" else -1
+        next_jog = rng.randint(3, 5) if knuckled else -1
         cy, cx, last_nudge, level_run = y, x, -9, 0
-        cells = []
+        cells, dys = [], []
         for j in range(length):
             if profile == "chokkan":
                 slope = 0.0 if j < 0.6 * length else 1 / 5.0
             elif profile == "shakan":
                 slope = 0.0 if j < 0.6 * length else 1 / 6.0
+            elif profile == "droop":
+                slope = 0.0 if j < 0.6 * length else -1 / 3.0
             else:
                 slope = s0 + (s1 - s0) * j / max(1, length - 1)
             if j == 0:
@@ -2977,9 +3329,16 @@ class Tree:
                     cap = 5 if abs(slope) < 0.1 else 3
                 elif profile == "shakan":
                     cap = 6  # level, parallel to the ground, lifting a row every six cells
+                elif profile == "wind":
+                    cap = 8
                 else:
                     cap = 10 ** 6
-                if j == dip_at:
+                if profile == "wind" and j == int(0.85 * length):
+                    dy, acc = 1, 0.0  # the one forced step: the tip drops a row
+                elif knuckled and j == next_jog:
+                    dy = rng.choice((-1, 1))
+                    next_jog = j + rng.randint(3, 5)
+                elif j == dip_at:
                     dy = 1
                 elif acc >= 1:
                     acc, dy = acc - 1, -1
@@ -3000,18 +3359,25 @@ class Tree:
                     and cy >= self.stand_top:
                 break  # not across the stand
             glyph = "~" if dy == 0 else ("/" if (side > 0) == (dy < 0) else "\\")
+            if knuckled and dys and dys[-1] == 1 and glyph == "~":
+                glyph = "_"  # after a dip the branch sags into the jog
             cells.append((cy, cx, glyph, None))
+            dys.append(dy)
         if len(cells) < (5 if kind == "fallb" else 3):
             return None
-        if kind == "primary":  # a main branch is two rows thick for its first part
+        heavy = self.bark == "plated"
+        thick_share = (0.7 if heavy else 0.4) if kind == "primary" else (0.3 if heavy and kind == "secondary" else 0.0)
+        if not thick:
+            thick_share = 0.0
+        if thick_share:  # a main branch is two rows thick for its first part
             thick = []
             own = {(cy, cx) for cy, cx, _g, _a in cells}
             for j, (cy, cx, glyph, _a) in enumerate(cells):
                 thick.append((cy, cx, glyph, None))
                 under = (cy + 1, cx)
-                if j < 0.4 * len(cells) and under[0] < self.H - 2 and under not in self.wood \
+                if j < thick_share * len(cells) and under[0] < self.H - 2 and under not in self.wood \
                         and under not in self.blocked and under not in own:
-                    thick.append((under[0], under[1], "_" if glyph == "~" else glyph, None))
+                    thick.append((under[0], under[1], "_" if glyph in "~_" else glyph, None))
                     own.add(under)
             cells = thick
         s.cells = cells
@@ -3020,18 +3386,19 @@ class Tree:
         self.strokes.append(s)
         return s
 
-    def plan_twin(self, trunk, R, S, w0, s):
+    def plan_twin(self, trunk, R, S, w0, s, fork=(2, 5), share=(0.55, 0.70), apex=(10, 16), wshare=0.6, side=None):
         """A second trunk forking just above the soil, shorter and thinner, leaning
-        away from the main trunk's first movement."""
+        away from the main trunk's first movement (the clump's trunks give their own
+        fork, height share, lean, width share and side)."""
         rng, B = self.rng, self.base
-        fork = rng.randint(2, 5)
+        fork = rng.randint(*fork)
         y_f = B - fork
         if y_f not in self.trunk_rows:
             return None
-        R2 = int(round(R * rng.uniform(0.55, 0.70)))
-        s2 = -s
-        apex = rng.randint(10, 16)
-        w2 = max(2, int(round(w0 * 0.6)))
+        R2 = int(round(R * rng.uniform(*share)))
+        s2 = -s if side is None else side
+        apex = rng.randint(*apex)
+        w2 = max(2, int(round(w0 * wshare)))
         x0, w = self.trunk_rows[y_f]
         x_edge = (x0 + w + w2 // 2) if s2 > 0 else (x0 - 1 - w2 // 2)  # beside the trunk, not in it
         points = [(0, 0), (max(2, int(0.12 * R2)), s2 * 3), (int(0.45 * R2), s2 * apex * 0.55),
@@ -3043,28 +3410,91 @@ class Tree:
         self.report["twin"] = f"forks {fork} rows up, R2 {R2}, apex {s2 * apex:+d} cols"
         return self.make_trunk("twin", cells, w2)
 
-    def plan_twin_primaries(self, twin, S):
+    def plan_twin_primaries(self, twin, S, R2=None, s2=None, path=None, count=2, k0=10):
         rng = self.rng
-        R2, s2 = self.twin_R, self.twin_side
+        R2 = self.twin_R if R2 is None else R2
+        s2 = self.twin_side if s2 is None else s2
+        path = self.twin_path if path is None else path
         L0 = S / 2 - 4
         groups = []
-        for k, (h, share) in enumerate(((0.45, 0.6), (0.72, 0.45))):
-            y = min(self.twin_path, key=lambda yy: abs(yy - (max(self.twin_path) - int(h * R2))))
-            x = self.twin_path[y]
+        for k, (h, share) in enumerate(((0.45, 0.6), (0.72, 0.45))[:count]):
+            y = min(path, key=lambda yy: abs(yy - (max(path) - int(h * R2))))
+            x = path[y]
             w = next((len(t) for yy, x0, t, _a in twin.cells if yy == y), 1)
             x0 = x - w // 2
             start_x = x0 + w if s2 > 0 else x0 - 1
             p = self.plan_branch("primary", y, start_x, s2, max(8, int(round(L0 * share))), "curve")
             if p is not None:
-                groups.append((p, self.plan_secondaries(p, s2), 10 + k))
+                groups.append((p, self.plan_secondaries(p, s2), k0 + k))
         return groups
+
+    def plan_legs(self, w0):
+        """The exposed-root tree's legs: three or four roots from the trunk's base row
+        down to the soil, two cells wide at the top and one at the foot, splayed to
+        w0 + 3 columns each side (one may cross another), the ground showing between
+        them; a third of these trees clasp a rock: a boulder of shade between the legs
+        up to 70 % of their height, the legs drawn over it."""
+        rng, B, spec = self.rng, self.base, self.spec
+        y_top = B - self.lift
+        x0, w = self.trunk_rows[y_top]
+        n = rng.randint(*spec["root_legs"])
+        splay = w0 + 3
+        if rng.random() < spec.get("rock", 0.0):
+            rock_h = max(2, int(round(0.7 * self.lift)))
+            s = Stroke("rock")
+            for hh in range(1, rock_h + 1):
+                hw = int(round(splay * 0.9 * math.sqrt(max(0.0, 1 - (hh / (rock_h + 1)) ** 2))))
+                if hw < 1:
+                    continue
+                y, xl = B - hh, self.cx - hw
+                text = "\u2592" * (2 * hw + 1)
+                s.cells.append((y, xl, text, "r" * len(text)))
+            if s.cells:
+                y, xl, text, _p = s.cells[-1]
+                cap = "".join("'."[k % 2] for k in range(len(text) - 2))
+                s.cells.append((y - 1, xl + 1, cap, "r" * len(cap)))
+                for y, xl, text, _p in s.cells:
+                    for k in range(len(text)):
+                        self.wood[(y, xl + k)] = s
+                        self.ink.add((y, xl + k))
+                self.strokes.append(s)
+                self.legs.append(s)
+                self.report["rock"] = f"{rock_h} rows"
+        feet = []
+        for k in range(n):
+            u = (k - (n - 1) / 2) / max(0.5, (n - 1) / 2)
+            top_x = x0 + int(round(k / max(1, n - 1) * (w - 1)))
+            foot_x = self.cx + int(round(u * splay)) + rng.randint(-1, 1)
+            if n >= 3 and rng.random() < 0.25:
+                foot_x += rng.choice((-3, 3))  # one leg crosses another
+            bow = (1 if u > 0 else -1 if u < 0 else 0) * rng.uniform(1.0, 2.0)  # each leg bows outward at mid-height
+            points = [(0, foot_x), (self.lift * 0.5, (foot_x + top_x) / 2 + bow), (self.lift, top_x)]
+            path = gentle_path(points, 0, self.lift, limit=1)
+            s = Stroke("root")
+            for h in range(self.lift):  # the foot first, up to the row under the trunk's base
+                y, x = B - h, path[h]
+                dx = path[h + 1] - x
+                glyph = "|" if dx == 0 else ("/" if dx > 0 else "\\")
+                wide = h > self.lift * 0.5
+                text = glyph * 2 if wide else glyph
+                xl = x - (1 if wide and dx <= 0 else 0)
+                if h == 0:
+                    text, xl = ("_" + text, xl - 1) if foot_x < self.cx else (text + "_", xl)
+                s.cells.append((y, xl, text, None))
+            for y, xl, text, _p in s.cells:
+                for j in range(len(text)):
+                    self.wood[(y, xl + j)] = s
+            self.strokes.append(s)
+            self.legs.append(s)
+            feet.append(foot_x - self.cx)
+        self.report["root legs (feet from the base)"] = feet
 
     def plan_back_pad(self, trunk, R, groups):
         """One pad behind the trunk at mid height, drawn never over wood, so the trunk
         and the branches show in front of it."""
         if not self.spec["back_pad"] or not groups:
             return None
-        rng, B = self.rng, self.base
+        rng, B = self.rng, self.base - self.lift
         cy = B - int(round(rng.uniform(0.50, 0.56) * R))
         cx = self.trunk_x_at(cy)
         first_rx = self.pad_radii(groups[0][0])[0]
@@ -3076,7 +3506,7 @@ class Tree:
     def pad_radii(self, p):
         """The radii of a branch's pad: about 2:1 in square units, overhanging the tip."""
         lf = self.cfg["leafiness"] * self.scale
-        pads = self.spec["pads"] if self.spec else "by_branch"
+        pads = self.spec.get("pads", "by_branch") if self.spec else "by_branch"
         if pads != "by_branch" and p.kind != "fallb":
             rx = max(3, int(round(self.rng.randint(*pads[0]) * lf)))
             ry = max(2, int(round(self.rng.randint(*pads[1]) * lf)))
@@ -3086,12 +3516,40 @@ class Tree:
         else:
             rx = max(3, int(round((0.5 * len(p.cells) + 4) * self.cfg["leafiness"])))
             ry = max(2, int(round(rx / 3.5)) + 1)
+        if self.foliage == "willow" and p.kind in BRANCH_KINDS:  # the cap the strands hang from
+            return max(3, int(round(0.4 * len(p.cells) + 3))), 3
+        return self.style_radii(rx, ry)
+
+    def style_radii(self, rx, ry):
+        """A pad's radii in the tree's foliage style: pines always two tiers tall,
+        junipers wide and flat, elms taller and rounder, tufts low."""
+        style = self.foliage
+        if style == "pine":
+            return rx, max(4, ry)
+        if style == "juniper":
+            rx = int(round(rx * 1.05))
+            return rx, max(2, int(round(rx / 5)) + 1)
+        if style == "elm":
+            return rx, int(round(rx / 2.5)) + 1
+        if style == "tuft":
+            return rx, min(ry, 3)
         return rx, ry
 
+    def twigs_for(self):
+        """Secondary twigs per main branch: the form's number, unless the foliage says
+        otherwise (a juniper fans two pads from a branch, a willow hangs its strands)."""
+        if not self.spec or not self.spec.get("twigs"):
+            return 0
+        return FOLIAGE[self.foliage].get("twigs", self.spec["twigs"])
+
     def cloud(self, twig, rx, ry, at=0.70):
-        """A cloud's box and centre: over the twig at `at` of its length."""
+        """A cloud's box and centre: over the twig at `at` of its length (a willow's cap
+        near the branch's end, its box reaching down to where its strands hang)."""
+        willow = self.foliage == "willow" and twig.kind in BRANCH_KINDS
+        if willow:
+            at = 0.85
         cy, cx = twig.cells[int(len(twig.cells) * at)][:2]
-        return (twig, rx, ry, cy, cx, (cy + 1 - ry, cy + 1, cx - rx, cx + rx))
+        return (twig, rx, ry, cy, cx, (cy + 1 - ry, cy + 1 + (12 if willow else 0), cx - rx, cx + rx))
 
     @staticmethod
     def near(a, b):
@@ -3109,7 +3567,7 @@ class Tree:
             families.append([self.cloud(p, rx, ry)])
         boxes = [f[0][5] for f in families]
         # The twin's pads keep the air rule against the main tree's.
-        if twin is not None:
+        if self.extra_trunks:
             main_boxes = [f[0][5] for f, (p, _s, k) in zip(families, groups) if k < 10]
             kept = []
             for f, g in zip(families, groups):
@@ -3126,11 +3584,12 @@ class Tree:
         apexes = []
         chance = self.spec["apex_pad"]
         if chance >= 1.0 or rng.random() < chance:
-            apexes.append(self.apex_pad(trunk, self.trunk_path, B - R, 0.90, (10, 14), (4, 5)))
-        if twin is not None:
-            apexes.append(self.apex_pad(twin, self.twin_path, min(self.twin_path), 0.90, (8, 10), (4, 4)))
-        if twin is not None and apexes[0] is not None and self.near(apexes[0][5], apexes[-1][5]):
-            apexes.pop()  # the twin's apex pad would touch the main one: the twin ends bare
+            apexes.append(self.apex_pad(trunk, self.trunk_path, min(self.trunk_path), 0.90, (10, 14), (4, 5)))
+        for tw, tpath, _r, _s2 in self.extra_trunks:
+            a = self.apex_pad(tw, tpath, min(tpath), 0.90, (8, 10), (4, 4))
+            if apexes and apexes[0] is not None and apexes[0][0] is trunk and self.near(apexes[0][5], a[5]):
+                continue  # it would touch the main apex pad: that trunk ends bare
+            apexes.append(a)
         for apex in apexes:
             if apex is not None:
                 boxes.append(apex[5])
@@ -3139,7 +3598,7 @@ class Tree:
         for f, (p, secs, k) in zip(families, groups):
             own = f[0][5]
             for sec in list(secs):
-                c = self.cloud(sec, max(3, round(8 * lf * self.scale)), max(2, round(4 * lf * self.scale)))
+                c = self.cloud(sec, *self.style_radii(max(3, round(8 * lf * self.scale)), max(2, round(4 * lf * self.scale))))
                 if any(b is not own and self.near(c[5], b) for b in boxes):
                     self.drop_branch(sec)
                     secs.remove(sec)
@@ -3158,7 +3617,8 @@ class Tree:
         self.report["pads (centre, rx, ry)"] = [(f[0][3], f[0][4], f[0][1], f[0][2]) for f in families]
         back_pad = self.fill_pad([back], never_over_wood=True) if back is not None else None
         apex_pads = [self.fill_pad([a]) for a in apexes if a is not None]
-        chain = [trunk] + ([twin] if twin is not None else []) + ([back_pad] if back_pad is not None else [])
+        chain = [trunk] + self.legs + self.jins + [t for t, _p, _r, _s2 in self.extra_trunks] \
+            + ([back_pad] if back_pad is not None else [])
         for i in order:
             p, secs, _k = groups[i]
             chain.extend([p] + secs + [pads[i]])
@@ -3176,11 +3636,15 @@ class Tree:
         apex_x = (path.get(apex_y - 1, path[top_y]) + path[top_y]) // 2
         rx = max(3, int(round(rng.randint(*rx_range) * lf)))
         ry = max(2, int(round(rng.randint(*ry_range) * lf)))
-        for y1, x1, text, _a in trunk.cells:
-            if y1 < apex_y - ry + 2:
-                for k in range(len(text)):
-                    self.wood.pop((y1, x1 + k), None)
-        trunk.cells = [c for c in trunk.cells if c[0] >= apex_y - ry + 2]
+        if self.topjin and trunk.kind == "trunk":
+            apex_y = max(apex_y, top_y + 3 + ry)  # the top jin stands clear above the pad
+            apex_x = path.get(apex_y, path[top_y])
+        else:
+            for y1, x1, text, _a in trunk.cells:
+                if y1 < apex_y - ry + 2:
+                    for k in range(len(text)):
+                        self.wood.pop((y1, x1 + k), None)
+            trunk.cells = [c for c in trunk.cells if c[0] >= apex_y - ry + 2]
         return (trunk, rx, ry, apex_y - 1, apex_x, (apex_y - ry, apex_y, apex_x - rx, apex_x + rx))
 
     def drop_branch(self, s):
@@ -3190,12 +3654,17 @@ class Tree:
             if self.wood.get((y1, x1)) is s:
                 del self.wood[(y1, x1)]
 
-    def fill_pad(self, members, never_over_wood=False):
-        """One mass of leaves over a family's twigs: the union of a flat-bottomed dome
-        per twig, each cell by its nearest dome, full inside and feathering out at the
-        edge, lit along the top of the ideal dome; it grows from the branch's end
-        outward and over the wood beneath it."""
+    def fill_pad(self, members, never_over_wood=False, edge_at=None):
+        """One mass of leaves over a family's twigs, in the tree's foliage style: the
+        union of a flat-bottomed dome per twig, each cell by its nearest dome, full inside
+        and feathering out at the edge, lit along the top of the ideal dome (a pine in
+        tiers with a dark seam under each, a tuft lit on its top row only), holes where
+        the style has them, blooms or fruit as accents, a willow's strands hanging from
+        its branch; it grows from the branch's end outward and over the wood beneath it."""
         cfg, rng = self.cfg, self.rng
+        style = "cloud" if never_over_wood else self.foliage
+        spec = FOLIAGE[style]
+        edge_at = spec["edge_at"] if edge_at is None else edge_at
         twigs = {m[0] for m in members if m[0] is not None}
         boxes = [m[5] for m in members]
         cover = set() if never_over_wood else {
@@ -3206,8 +3675,13 @@ class Tree:
             o_y, o_x = members[0][3], members[0][4]
         else:
             o_y, o_x = twig0.cells[-1][:2]
-        chosen = {}  # (y, x) -> (edge?, lit?)
-        for y in range(min(b[0] for b in boxes), max(b[1] for b in boxes) + 1):
+        bottom = max(m[3] for m in members) + 1  # the pads' lowest row
+
+        def inside(y, x):  # within a dome's full part (not its feathered edge)
+            return any(cy + 1 - ry <= y <= cy + 1 and math.hypot((x - cx) / rx, (cy + 1 - y) / ry) <= edge_at
+                       for _t, rx, ry, cy, cx, _b in members)
+        chosen = {}  # (y, x) -> (edge?, tone, y_top, h); tone L lit, l shaded, u underside or seam, e edge
+        for y in range(min(b[0] for b in boxes), min(bottom, max(b[1] for b in boxes)) + 1):
             for x in range(min(b[2] for b in boxes), max(b[3] for b in boxes) + 1):
                 if not (0 <= y <= self.H - 3 and 0 <= x < self.W) or (y, x) in self.blocked:
                     continue
@@ -3223,13 +3697,26 @@ class Tree:
                 if (y, x) in self.wood:
                     if (y, x) not in cover:
                         continue  # wood in front of this pad stays
-                elif rng.random() > (1.0 if d < 0.8 else (1 - d) / 0.2):
+                elif rng.random() > (1.0 if d < edge_at else (1 - d) / (1 - edge_at)):
                     continue  # covered wood always gets its leaf; the rest feathers out
-                edge = d > 0.8
+                edge = d > edge_at
+                if not edge and spec["hole"] and (y, x) not in self.wood and rng.random() < spec["hole"]:
+                    continue  # light through the fine twigs
                 dxn = (x - cx) / rx
                 y_top = cy + 1 - ry * math.sqrt(max(0.0, 1 - dxn * dxn))
-                lit = y < y_top + 0.4 * (cy + 1 - y_top)
-                chosen[(y, x)] = (edge, lit)
+                h = cy + 1 - y_top
+                if edge:
+                    tone = "e"
+                elif spec["lit"] == "tiers":  # the pine: strata, a dark seam under each tier
+                    r = bottom - y
+                    tone = "L" if not inside(y - 1, x) else ("u", "l", "L")[r % 3]
+                elif spec["lit"] == "top":
+                    tone = "L" if y < y_top + 1.0 else "l"
+                else:
+                    tone = "L" if y < y_top + spec["lit"] * h else "l"
+                if spec["under"] and y == bottom and not edge:
+                    tone = "u"
+                chosen[(y, x)] = (edge, tone, y_top, h)
         by_row = {}
         for y, x in chosen:
             by_row.setdefault(y, []).append(x)
@@ -3237,21 +3724,76 @@ class Tree:
             if len(xs) < 4 and not any((y, x) in cover for x in xs):
                 for x in xs:
                     del chosen[(y, x)]
-        spots = []
-        bottom = max(m[3] for m in members) + 1  # the pads' lowest row: the shaded underside
-        for (y, x), (edge, lit) in chosen.items():
-            char = rng.choice(cfg["leaf_edge"] if edge else self.leaf_set)
-            attr = self.attrs["leaf"][1 if lit and not edge else 0]
-            if y == bottom and not edge:
-                attr = self.attrs["leaf_under"]
+        spots, plain = [], []
+        accents = spec.get("accent", ())
+        blooms = 0
+        for (y, x), (edge, tone, y_top, h) in chosen.items():
+            char = rng.choice(self.leaf_edge if edge else self.leaf_set)
+            if tone == "u" and spec.get("seam") and y != bottom:
+                char = rng.choice(spec["seam"])
+            attr = {"e": self.attrs["leaf"][0], "l": self.attrs["leaf"][0], "L": self.attrs["leaf"][1],
+                    "u": self.attrs["leaf_under"]}[tone]
+            kind = None
+            if accents and tone in ("L", "l"):
+                for a_char, what, share in accents:
+                    in_zone = (y < y_top + 0.6 * h) if what in ("bloom", "rosebud") else (y >= y_top + 0.4 * h)
+                    if in_zone and rng.random() < share:
+                        char, attr, kind = a_char, self.attrs[what], what
+                        blooms += what == "bloom"
+                        break
+                if kind is None:
+                    plain.append(len(spots))
             order = math.hypot((x - o_x) / 2, y - o_y) + rng.uniform(0, 0.5)
-            spots.append((order, y, x, char, attr))
+            spots.append((order, y, x, char, attr, kind))
+        if accents and accents[0][1] == "bloom" and blooms < 3 and plain:  # at least three blooms a pad
+            for i in rng.sample(plain, min(len(plain), 3 - blooms)):
+                o, y, x, _c, _a, _k = spots[i]
+                spots[i] = (o, y, x, "@", self.attrs["bloom"], "bloom")
         spots.sort()
         s = Stroke("leaf")
-        s.cells = [(y, x, char, attr) for _o, y, x, char, attr in spots]
+        s.cells = [(y, x, char, attr) for _o, y, x, char, attr, _k in spots]
+        for _o, y, x, _c, _a, kind in spots:
+            if kind:
+                self.accents[(y, x)] = kind
         s.cover = cover
+        if style == "willow" and twig0 is not None and twig0.kind in BRANCH_KINDS:
+            self.willow_strands(s, twig0, chosen)
         self.strokes.append(s)
         return s
+
+    def willow_strands(self, s, branch, chosen):
+        """A willow's curtains: from every second cell of the branch from a quarter of
+        its length a strand of 3 + 7t cells hangs, its first two cells lit, its last a
+        comma; under the cap a strand begins below it; it stops at wood, at the planter
+        and two rows above the soil."""
+        rng, spec = self.rng, FOLIAGE["willow"]
+        cells = branch.cells
+        n = len(cells)
+        strand = []
+        taken = set()
+        for j, (y, x, _g, _p) in enumerate(cells):
+            t = j / max(1, n - 1)
+            if t < 0.25 or j % 2:
+                continue
+            length = int(round(3 + 5 * t)) + rng.randint(0, 2)
+            k, yy = 0, y + 1
+            while k < length and yy < self.base - 1:
+                cell = (yy, x)
+                yy += 1
+                if cell in chosen and not chosen[cell][0]:
+                    continue  # under the cap: the strand begins below it
+                if cell in self.wood or cell in self.blocked or cell in chosen or cell in taken:
+                    break
+                if k < 2:
+                    char, attr = "|", self.attrs["leaf"][1]
+                elif k == length - 1:
+                    char, attr = rng.choice(",'"), self.attrs["leaf"][0]
+                else:
+                    char, attr = rng.choice(spec["strand"]), self.attrs["leaf"][0]
+                strand.append((cell[0], cell[1], char, attr))
+                taken.add(cell)
+                k += 1
+        s.cells.extend(strand)  # the curtains hang after the cap, top down
 
     # ---- the cascade ---------------------------------------------------------------------
 
@@ -3353,6 +3895,191 @@ class Tree:
         for a, b in zip(chain, chain[1:]):
             a.after.append(b)
 
+    def steep_line(self, kind, y0, x0, rows, reach, bow=0.0):
+        """A fine branch climbing `rows` rows and reaching `reach` columns, one cell a
+        row (| / \\), stopping at wood, the planter or the screen's edge."""
+        points = [(0, 0), (rows * 0.5, reach * 0.45 + bow), (rows, reach)]
+        path = gentle_path(points, 0, rows, limit=1)
+        s = Stroke(kind)
+        for h in range(rows + 1):
+            y, x = y0 - h, x0 + path[h]
+            if not (self.air <= y < self.H - 2 and 0 <= x < self.W) or (y, x) in self.wood or (y, x) in self.blocked:
+                break
+            dx = path.get(h + 1, path[h]) - path[h]
+            s.cells.append((y, x, "|" if dx == 0 else ("/" if dx > 0 else "\\"), None))
+        if len(s.cells) < 3:
+            return None
+        for y, x, _g, _p in s.cells:
+            self.wood[(y, x)] = s
+        self.strokes.append(s)
+        return s
+
+    def fan_branch(self, kind, y, x, side, rows, reach):
+        """One branch of a fan: steep ones a cell a row, shallow ones a cell a column."""
+        if reach <= rows:
+            return self.steep_line(kind, y, x, rows, side * reach, self.rng.uniform(-1, 1))
+        return self.plan_branch(kind, y, x, side, reach, "fan", slope=rows / reach, thick=False)
+
+    def plan_hokidachi(self, R, S, w0):
+        """The broom (hokidachi): a short straight trunk ending at a third of the
+        height, five to seven fine branches fanning from its top row, the middle ones
+        near vertical and the outer ones shallow, each forking twice; one rounded crown
+        over the upper fan, the lower fan bare beneath it."""
+        rng, B, spec = self.rng, self.base, self.spec
+        top = max(4, int(round(rng_range(rng, spec["trunk_top"]) * R)))
+        cells = [(B - h, self.cx) for h in range(top + 1)]
+        self.trunk_path = {y: x for y, x in cells}
+        trunk = self.make_trunk("trunk", cells, w0, spec["roots"], 0, R + 1)
+        y_t = B - top
+        x0, w = self.trunk_rows[y_t]
+        n = rng.randint(*spec["branches"])
+        fan_rows = max(6, int(round(rng_range(rng, spec["fan_height"]) * (R - top))))
+        reach_max = max(6, int(round(S / 2 - 2)))
+        fan, twigs = [], {}
+        for k in sorted(range(n), key=lambda k: abs(k - (n - 1) / 2)):  # the centre first
+            u = (k - (n - 1) / 2) / max(0.5, (n - 1) / 2)
+            side = 1 if u > 0 else -1 if u < 0 else rng.choice((-1, 1))
+            sx = x0 + int(round(k / max(1, n - 1) * (w - 1)))
+            rows = max(4, int(round(fan_rows * (1 - 0.3 * abs(u)) * rng.uniform(0.9, 1.0))))
+            reach = int(round(abs(u) * reach_max * rng.uniform(0.85, 1.0))) + (1 if u == 0 and rng.random() < 0.5 else 0)
+            br = self.fan_branch("primary", y_t - 1, sx, side, rows, reach)
+            if br is None:
+                continue
+            fan.append(br)
+            twigs[br] = []
+            for share in (0.45, 0.70):
+                jy, jx = br.cells[min(len(br.cells) - 1, int(share * len(br.cells)))][:2]
+                t_rows = max(3, int(round(rows * 0.3)))
+                t_reach = max(2, int(round(t_rows * (0.6 + 0.8 * abs(u)))))
+                t_side = side if u != 0 else (-1 if share < 0.5 else 1)
+                tw = self.fan_branch("secondary", jy - 1, jx + t_side, t_side, t_rows, t_reach)
+                if tw is not None:
+                    twigs[br].append(tw)
+        cx = x0 + w // 2
+        cy = y_t - int(round(0.65 * fan_rows))
+        rx, ry = reach_max, max(3, int(round(0.45 * (R - top))))
+        box = (cy + 1 - ry, cy + 1, cx - rx, cx + rx)
+        members = [(br, rx, ry, cy, cx, box) for br in fan] + [(tw, rx, ry, cy, cx, box) for br in fan for tw in twigs[br]]
+        crown = self.fill_pad(members, edge_at=0.72) if members else None
+        self.clouds = 1 if crown else 0
+        self.report.update({"R": R, "S": S, "w0": w0, "trunk top": top, "fan": f"{len(fan)} branches, {fan_rows} rows",
+                            "crown": f"centre ({cy}, {cx}), rx {rx}, ry {ry}"})
+        chain = [trunk] + self.jins
+        for br in fan:
+            chain.extend([br] + twigs[br])
+        if crown is not None:
+            chain.append(crown)
+        for a, b in zip(chain, chain[1:]):
+            a.after.append(b)
+
+    def plan_hankengai(self, shrink):
+        """The semi-cascade (hankengai): the cascade's short rise and crown and the
+        arc over the rim, then a run out past the rim easing down but never below
+        the planter's body, three rows thick at first and one at the tip, with two
+        or three branches rising from the run and their pads above it."""
+        cfg, rng, B = self.cfg, self.rng, self.base
+        spec, s = self.spec, self.first_side
+        self.scale = min(1.0, (self.H - 30) / 90.0)
+        rise = max(5, int(round(rng_range(rng, spec["rise"]) * self.scale)))
+        out = max(10, int(round(rng_range(rng, spec["out"]) * self.scale * shrink)))
+        self.R, self.S, self.w0 = rise, 0, spec["trunk_width"]
+        crown_rx = max(4, int(round(rng.randint(*spec["crown"][0]) * self.scale)))
+        crown_ry = max(2, int(round(rng.randint(*spec["crown"][1]) * self.scale)))
+        self.crown_spread = 2 * crown_rx + 14
+        self.layout_pot()
+        width = self.pot_width
+        rim_x = self.pot_rows[0][0] + (width - 1 if s > 0 else 0)
+        to_rim = abs(rim_x - self.cx)
+        total_len = rise + 2 + out
+        points = [(0, 0), (int(rise * 0.5), s * (to_rim + 1) * 0.4), (rise, s * (to_rim + 1))]
+        path = gentle_path(points, 0, rise, limit=2)
+        cells = [(B - h, self.cx + path[h]) for h in range(rise + 1)]
+        self.trunk_path = {y: x for y, x in cells}
+        trunk = self.make_trunk("trunk", cells, spec["trunk_width"], ("_/", "\\_"), 0, total_len)
+        apex_y, x_top = cells[-1]
+        by = B - int(round(rise * 0.6))
+        x0, w = self.trunk_rows[by]
+        short = self.plan_branch("primary", by, x0 - 1 if s > 0 else x0 + w, -s,
+                                 max(4, int(round(rng.randint(8, 10) * self.scale))), "curve")
+        # The arc: out from the top and down to the rim's row, two columns outside it.
+        x_start = rim_x + s * 2
+        y_rim = B - 1
+        apoints = [(apex_y, x_top), (apex_y + 2, x_top + 2 * s), (y_rim - 1, x_start - s), (y_rim, x_start)]
+        apath = gentle_path(apoints, apex_y + 1, y_rim, limit=2)
+        acells = [(y, apath[y]) for y in range(apex_y + 1, y_rim + 1)]
+        arc = self.make_trunk("fall", acells, 3, None, rise + 1, total_len)
+        # The run: a cell a column out past the rim, easing down within the body's rows.
+        body_rows = sum(1 for _x, _t, _p, st in self.pot_rows if not st)
+        drop = rng_range(rng, spec["drop"]) * self.scale * min(1.0, out / 26.0)  # a run cut short drops less
+        drop = max(1, min(int(round(drop)), body_rows - 2))
+        run = Stroke("fall")
+        prev_y, run_top = y_rim, {}
+        for j in range(1, out + 1):
+            x = x_start + s * j
+            y = y_rim + int(round(drop * (j / out) ** 1.8))
+            if not (0 <= x < self.W) or y > y_rim + body_rows - 1:
+                break
+            thick = next((rows for rows, until in spec["thick"] if j < until * out), 1)
+            top = ("\\" if s > 0 else "/") if y > prev_y else "~"
+            column = [(y, x, top, None)]
+            if thick == 3:
+                column += [(y + 1, x, "|", "k"), (y + 2, x, "_", None)]
+            elif thick == 2:
+                column.append((y + 1, x, "_", None))
+            for cy, cx, g, p in column:
+                if cy > y_rim + body_rows - 1 or (cy, cx) in self.blocked or (cy, cx) in self.wood:
+                    continue
+                run.cells.append((cy, cx, g, p))
+                self.wood[(cy, cx)] = run
+                if p == "k":
+                    self.ink.add((cy, cx))
+            run_top[j] = (y, x)
+            prev_y = y
+        self.strokes.append(run)
+        self.report.update({"rise": rise, "out": len(run_top), "drop": drop, "crown": f"rx {crown_rx} ry {crown_ry}"})
+        # The crown over the inner branch and the cap on the arc's top, as the cascade's.
+        cap_rx, cap_ry = max(3, int(round(rng.randint(6, 8) * self.scale))), max(2, int(round(3 * self.scale)))
+        cap_box = (apex_y - cap_ry, apex_y, x_top - cap_rx, x_top + cap_rx)
+        crown_members = ([self.cloud(short, crown_rx, crown_ry)] if short is not None else [])
+        cap_members = [(trunk, cap_rx, cap_ry, apex_y - 1, x_top, cap_box),
+                       (arc, cap_rx, cap_ry, apex_y - 1, x_top, cap_box)]
+        # Branches rising from the run at 40 %, 75 % and the tip, their pads above it.
+        n_b = rng.randint(*spec["fall_branches"])
+        shares = (0.40, 0.75, 0.97)[:n_b]
+        lf = cfg["leafiness"] * self.scale
+        fgroups = []
+        for k, share in enumerate(shares):
+            j = max(1, min(len(run_top), int(round(share * len(run_top)))))
+            if j not in run_top:
+                continue
+            y, x = run_top[j]
+            length = max(5, int(round(rng.randint(8, 12) * self.scale)))
+            br = self.plan_branch("fallb", y - 1, x + s, s, length, "fallb", thick=False)
+            if br is not None:
+                fgroups.append((br, [], k))
+        crown_pad = self.fill_pad(crown_members) if crown_members else None
+        cap_pad = self.fill_pad(cap_members)
+        boxes = [c[5] for c in crown_members] + [cap_box]
+        fams = []
+        for br, _secs, _k in fgroups:
+            rx = max(3, int(round(rng.randint(*spec["fall_pads"][0]) * lf)))
+            ry = max(2, int(round(rng.randint(*spec["fall_pads"][1]) * lf)))
+            c = self.cloud(br, rx, ry)
+            if any(self.near(c[5], b) for b in boxes):
+                self.drop_branch(br)
+                continue
+            boxes.append(c[5])
+            fams.append((br, c))
+        self.clouds = len(boxes)
+        pads = [(br, self.fill_pad([c])) for br, c in fams]
+        self.report["run branches (column, length)"] = [(g[0].cells[0][1], len(g[0].cells)) for g in fgroups]
+        self.report["pads (centre, rx, ry)"] = [(c[3], c[4], c[1], c[2]) for _br, c in fams]
+        chain = [trunk] + self.jins + ([short, crown_pad] if crown_pad is not None else []) + [arc, run, cap_pad]
+        for br, pad in pads:
+            chain.extend([br, pad])
+        for a, b in zip(chain, chain[1:]):
+            a.after.append(b)
+
     # ---- the planter and the composition -------------------------------------------------
 
     def spread(self):
@@ -3364,8 +4091,10 @@ class Tree:
         """How far from the pot's left column the base stands, so it sits off-centre
         in the pot as the form asks."""
         s = self.first_side
-        if self.style == "kengai":
+        if self.style in CASCADES:
             frac, from_left = 0.35, s < 0  # 35 % from the fall side's edge
+            if self.style == "hankengai":  # in the run's wide tray: a dozen columns from the rim
+                frac = min(0.35, 12.0 / max(1, width))
         else:
             frac, rule = self.spec["planting"]
             if isinstance(frac, (tuple, list)):  # a range: spread over the trees by their height
@@ -3395,6 +4124,11 @@ class Tree:
             width = len(USER_POTS[self.pot_kind][0][0][0])
         elif self.style == "kengai":
             width = max(least, min(room, int(1.2 * self.crown_spread))) | 1
+        elif self.style == "hankengai":  # the run's wide planter, sized to the crown when named
+            width = int(1.2 * self.crown_spread)
+            if self.cfg["pot"] == "auto":
+                width = max(width, int(0.6 * self.W))
+            width = max(least, min(room, width)) | 1
         else:
             share = POTS[self.pot_kind][1]
             width = int(share * self.spread())
@@ -3439,7 +4173,7 @@ class Tree:
         xs = [x + k for s in self.strokes for y, x, text, _a in s.cells for k in range(len(text))]
         for x0, text, paint, _st in self.pot_rows:
             xs += [x0 + k for k, p in enumerate(paint) if p != " "]
-        if self.style == "kengai":  # the hanging pads are planned after the planter
+        if self.style in CASCADES:  # the hanging pads are planned after the planter
             xs += [x0 + k for x0, text, paint, _st in self.pot_rows for k in range(len(text))]
         return (min(xs), max(xs)) if xs else (self.cx, self.cx)
 
@@ -3457,6 +4191,7 @@ class Tree:
         self.trunk_path = {y: x + dx for y, x in self.trunk_path.items()}
         if hasattr(self, "twin_path"):
             self.twin_path = {y: x + dx for y, x in self.twin_path.items()}
+        self.extra_trunks = [(t, {y: x + dx for y, x in p.items()}, r, s2) for t, p, r, s2 in self.extra_trunks]
         self.cx += dx
         if self.planter:
             return
@@ -3611,13 +4346,22 @@ class Tree:
                 heapq.heappush(events, (t + cfg["gap"] * cfg["step"], next(order), "stroke", s))
 
         def wood(s, i, attr):
-            y, x, text, _a = s.cells[i]
-            if all(grid.get((y, x + k)) == ("wood", text[k], attr) for k in range(len(text))):
+            y, x, text, paint = s.cells[i]
+            final = [attr if (paint is None or paint[k] in "bk") else attrs["dead"] if paint[k] in "dj"
+                     else attrs["dead"] if paint[k] == "r" else 0
+                     for k in range(len(text))]  # deadwood and a rock in the bleached tone; the void a blank
+            if all(grid.get((y, x + k)) == ("wood", text[k], final[k]) for k in range(len(text))):
                 return False  # already there, exactly so
             new = [(y, x + k) for k in range(len(text)) if (y, x + k) not in grid]
-            self.put(y, x, text, attr)
+            k = 0
+            while k < len(text):  # runs of one attribute
+                j = k + 1
+                while j < len(text) and final[j] == final[k]:
+                    j += 1
+                self.put(y, x + k, text[k:j], final[k])
+                k = j
             for k in range(len(text)):
-                grid[(y, x + k)] = ("wood", text[k], attr)
+                grid[(y, x + k)] = ("wood", text[k], final[k])
             for cell in new:
                 self.halo_add(cell)
             return True
@@ -3871,7 +4615,9 @@ class Tree:
         lowest last, one here and one there: all to the first autumn colour, many on
         to the next, bright."""
         cfg, rng, turn = self.cfg, self.rng, self.attrs["turn"]
-        leaves = [c for c, e in self.grid.items() if e[0] == "leaf"]
+        if FOLIAGE[self.foliage]["autumn"] == "yellow" and cfg["autumn_colors"] == SETTINGS["autumn_colors"][0]:
+            turn = turn[:1]  # needles and willow leaves go gold only
+        leaves = [c for c, e in self.grid.items() if e[0] == "leaf" and c not in self.accents]
         if not leaves or not turn or cfg["autumn"] <= 0:
             return None
         leaves.sort(key=lambda c: c[0] + rng.uniform(-8, 8))
@@ -3902,6 +4648,8 @@ class Tree:
         if not leaves:
             return None
         rng.shuffle(leaves)
+        # the blooms let go first, the fruit hangs on last
+        leaves.sort(key=lambda c: {"bloom": 0, "fruit": 2}.get(self.accents.get(c), 1))
         n, total = len(leaves), cfg["fall"]
         gust_leaves = (total / 17.5) * 18.5  # what the gusts will carry
         base_per_tick = max(1.0, (n - gust_leaves) / total) * TICK

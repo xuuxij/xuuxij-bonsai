@@ -115,8 +115,11 @@ planter: oval
 
 A number is either fixed (`0.45`) or a range drawn fresh for every tree
 (`0.5 to 0.7`). The bases are `moyogi` (informal upright, an S-curve trunk), `chokkan`
-(formal upright, straight), `shakan` (slanting) and `bunjin` (literati). The cascade
-cannot be a base. What can be set:
+(formal upright, straight), `shakan` (slanting) and `bunjin` (literati), and the forms
+added later, `fukinagashi` (windswept), `hokidachi` (broom), `kabudachi` (clump) and
+`neagari` (exposed root), whose own keys (the fan, the extra trunks, the root legs) come
+with the base and cannot be changed from a file. The two cascades cannot be bases. What
+can be set:
 
 | Setting | Meaning | moyogi | chokkan | shakan | bunjin |
 |---|---|---|---|---|---|
@@ -129,8 +132,8 @@ cannot be a base. What can be set:
 | `bow` | columns the leaning trunk bows against its lean | none | none | 3 to 6 | none |
 | `branches` | how many main branches | 3 to 5 | 4 to 6 | 3 to 4 | 2 to 3 |
 | `first branch` | share of the height where the first branch leaves | 0.40 | 0.33 | 0.38 | 0.62 to 0.70 |
-| `first side` | `outside` the first curve, `away` from the lean, or `either` | outside | either | away | outside |
-| `profile` | the branch's line: `curve` (dip then rise), `chokkan` (level, rising at the end), `shakan` (level) | curve | chokkan | shakan | curve |
+| `first side` | `outside` the first curve, `away` from the lean, `with` the lean, or `either` | outside | either | away | outside |
+| `profile` | the branch's line: `curve` (dip then rise), `chokkan` (level, rising at the end), `shakan` (level), `wind` (level, lifting slowly, the tip dropping), `droop` (level, then falling) | curve | chokkan | shakan | curve |
 | `branch length` | columns, e.g. `8 to 14`; left out, lengths follow the spread | by spread | by spread | by spread | 8 to 14 |
 | `twigs` | a twig inside each pad: `1` or `0` | 1 | 1 | 1 | 0 |
 | `apex pad` | chance of a pad on the apex, 0 to 1 | 1 | 1 | 1 | 0.6 |
@@ -143,7 +146,9 @@ cannot be a base. What can be set:
 The trunk's line shape comes with the base: an S-curve with three movements tightening
 upward (moyogi), straight (chokkan), a lean with a bow against it (shakan), or the
 literati's four reversals (bunjin); `movement`, `apex`, `lean` and `bow` set how far it
-moves. Twin trunks grow only on the built-in informal upright.
+moves. Twin trunks grow only on the built-in informal upright. A form's foliage and
+bark are drawn from its base's tables; the `foliage`, `bark` and `deadwood` settings
+name one for every tree.
 
 ## Checking your work
 
