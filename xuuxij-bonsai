@@ -1213,8 +1213,9 @@ def land_paint(rng, W, H, L, P, noise):
                 col = lerp(col, C_RIB, rib_k * 0.4)
                 # the forest at the feet (outside the centre band; the centre is the mist valley)
                 f = smoothstep(0.26, 0.10, alt) * 0.85
-                if c0 - 6 < x < c1 + 6:
-                    f *= 0.35
+                # thinner in the centre band (the mist valley), fading in over eighteen
+                # columns each side so the valley has no edge
+                f *= 1 - 0.65 * smoothstep(c0 - 14, c0 + 4, x) * smoothstep(c1 + 14, c1 - 4, x)
                 col = lerp(col, C_FOREST, f)
                 lay = "B"
             # the side hills, dark and wooded, only outside the centre band; their bodies
@@ -1234,10 +1235,14 @@ def land_paint(rng, W, H, L, P, noise):
             elif y >= mist_bot:
                 a = 0.0
             else:
+                # the spears: soft wisps, not slabs; the ends feather over ten cells, the
+                # top over three rows, the body thinned by noise, and never solid
                 for (x0, x1, r) in sp:
-                    if r <= y and x0 <= x <= x1:
+                    if r - 1 <= y and x0 <= x <= x1:
                         end = min(x - x0, x1 - x)
-                        a = max(a, (0.5 + 0.35 * smoothstep(r, mt, y)) * smoothstep(-1, 3, end))
+                        wisp = 0.65 + 0.35 * noise.fbm2(x, y, 7.0, 2.5, 2, 0.5, "spear")
+                        a = max(a, (0.3 + 0.4 * smoothstep(r, mt, y)) * smoothstep(-2, 10, end)
+                                * smoothstep(r - 1, r + 3, y) * wisp)
                 a = max(a, 0.45 * smoothstep(mt - 4, mt, y))
             if a > 0:
                 col = lerp(col, C_MIST, a)
