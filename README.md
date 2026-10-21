@@ -169,6 +169,7 @@ restart. A flag on the command line wins over the file.
 | `trim_color` | `auto` | the planter's trim colour: auto or a colour |
 | `stand_color` | `red` | the stand's colour (red = rosewood) |
 | `sky` | `yes` | clouds drifting behind the tree (no = a black sky) |
+| `clouds` | `auto` | the clouds' set: auto (tonal over a landscape, ink on a black sky), ink (the drawn outlines) or tonal (shaded masses with depth) |
 | `landscape` | `auto` | the mountain landscape behind the clouds: auto (with the sky, when the screen has colours), yes or no; read when the program starts |
 | `seed` | `none` | a number gives the same trees every time; none = random |
 
@@ -233,7 +234,14 @@ then, a lens-shaped lenticular standing still, a long stratocumulus roll; and th
 stylised piece, the spear mist (suyari-gasumi) of Japanese painting forming behind the
 trunk. Each tree's sky has a mood (clear, fair, high or misty), there is one wind for the
 whole run, which the leaf-fall's gusts mostly follow, and a cloud enters by the upwind
-edge or forms in place and dissolves, tail first. `sky = no` leaves the sky black.
+edge or forms in place and dissolves, tail first. `sky = no` leaves the sky black. Over
+the landscape a second set is the default, the *tonal* clouds: made the way the landscape
+is, painted as lit, shaded masses (domes roughened by noise, lit from the landscape's
+side, dark under the base) and halftoned into four greys of their own, in three depths —
+far clouds small, faint and slow, some passing behind the summits; mid ones in front of
+the ranges; near ones large and bright with solid white crowns, lower and faster — and
+fading as a whole, each cell stepping down its ladder of greys. `clouds = ink` keeps the
+drawn set over the landscape too.
 
 **The landscape.** Behind the clouds, a mountain landscape in quiet blue-greys only, the
 way the Edo *aizuri-e* were printed in blue so that the bonsai is the one thing in colour:

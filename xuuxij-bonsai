@@ -180,6 +180,8 @@ SETTINGS = {
     "trim_color":  ("auto", "color_auto", None, None, "the planter's trim colour: auto or a colour"),
     "stand_color": ("red", "color", None, None, "the stand's colour (red = rosewood)"),
     "sky":         (True, bool, None, None, "clouds drifting behind the tree (no = a black sky)"),
+    "clouds":      ("auto", "clouds", None, None, "the clouds' set: auto (tonal over a landscape, ink on a "
+                    "black sky), ink (the drawn outlines) or tonal (shaded masses with depth)"),
     "landscape":   ("auto", "tristate", None, None, "the mountain landscape behind the clouds: auto (with "
                     "the sky, when the screen has colours), yes or no; read when the program starts"),
     "seed":        (None, "seed", None, None, "a number gives the same trees every time; none = random"),
@@ -679,6 +681,11 @@ def convert(key, raw):
         if name in POTS or name in USER_POTS:
             return name
         raise ValueError(f"pot must be auto, no or one of {', '.join(list(POTS) + list(USER_POTS))}, not {text!r}")
+    if kind == "clouds":
+        name = text.lower()
+        if name in ("auto", "ink", "tonal"):
+            return name
+        raise ValueError(f"clouds must be auto, ink or tonal, not {text!r}")
     if kind in ("stand", "tristate"):
         name = text.lower()
         if name == "auto":
@@ -838,7 +845,8 @@ def make_attrs(cfg, live=True):
             # magenta slot, which the landscape leaves free, so the clouds keep their own
             # light however dim the landscape is; on a plain console, bold white.
             "W": color["magenta" if PALETTE_WAY else "white"] | curses.A_BOLD, "g": color["white"],
-            "d": color["black"] | curses.A_BOLD}
+            "d": color["black"] | curses.A_BOLD,
+            "c": color["cyan"] | curses.A_BOLD}  # the tonal clouds' glow, the cyan slot, landscape only
 
 
 def catmull_rom(points, lo, hi):
@@ -900,14 +908,14 @@ PALETTE_DAY = {
     4:  ("#050505", "deep sky, zenith (bg); the oval pot's glaze"),
     5:  ("#090909", "mid sky (bg)"),
     6:  ("#0e0e0e", "pale sky at the horizon, mist, far lake (bg); the celadon pot"),
-    7:  ("#707070", "cloud bodies g, gravel"),
-    8:  ("#404040", "cloud bases d, far clouds, shadows"),
+    7:  ("#8c8c88", "cloud bodies g, gravel"),
+    8:  ("#4a4a48", "cloud bases d, far clouds, shadows"),
     9:  ("#d33a1e", "autumn red leaves (tree only)"),
     10: ("#3db04a", "leaves lit, buds (tree only)"),
     11: ("#cf8f1c", "growing tip, autumn yellow leaves (tree only)"),
     12: ("#020202", "slate: pines, shore, forest, tree tops, gullies (the landscape's ink); oval pot pattern"),
-    13: ("#a0a0a0", "cloud tops W (the clouds' own slot)"),
-    14: ("#8a8a8a", "free; the celadon pot's highlight"),
+    13: ("#fbfbf8", "cloud tops W (the clouds' own slot)"),
+    14: ("#d2d2ce", "free; the celadon pot's highlight"),
     15: ("#e0e0e0", "bright white: the planters' highlights"),
 }
 # The same slots at other hours (round 2 material: swapped at a tree boundary by the clock).
@@ -1610,6 +1618,7 @@ class Backdrop:
     def __init__(self, W, H, seed, pairs, fallback=False):
         cells, self.meta = land_backdrop(W, H, seed)
         self.W, self.H, self.pairs = W, H, pairs
+        self.layer = self.meta["layer"]  # per cell: ' ' open sky, C far range, B main range, A hills, M mist, L lake, S shore, T table
         self.chars, self.fgl, self.bg, self.attr = [], [], [], []
         self.halo = {}  # cell -> how many tree cells it neighbours: a blank margin of paper
         for row in cells:
@@ -1819,13 +1828,330 @@ def mist_band(rng, width):
     return text, paint
 
 
-class Cloud:
-    __slots__ = ("kind", "size", "rows", "paint", "alt", "alt_paint", "x", "y", "speed", "born", "life",
-                 "phase", "phase_at", "fade", "ends", "breath_at", "width")
+# ---- the tonal clouds -------------------------------------------------------------------
+# The second cloud set, the default over a landscape: clouds made the way the landscape
+# is, painted as lit, shaded masses (domes of overlapping half-ellipsoids, roughened by
+# noise, lit from above on the landscape's light side, dark under the base) and halftoned
+# into ░ ▒ █ in four greys of their own (W c g d: slots 13 14 7 8), in three depths with
+# aerial perspective: far clouds faint and never solid, mid ones capped at the glow, near
+# ones with solid white crowns. No ink. Designed from the same references as the landscape.
 
-    def __init__(self, kind, text, paint, x, y, speed, born, life, fade, ends, alt=None):
+TC_TONES = {"W": "#fbfbf8", "c": "#d2d2ce", "g": "#8c8c88", "d": "#4a4a48"}
+TC_COVER = {"░": 0.25, "▒": 0.5, "█": 1.0}
+TC_DITHER = 0.06   # in lightness (Y^0.5)
+TC_SAMPLES = 4     # sample points per cell side
+
+TC_DEPTHS = {   # cap: brightness ceiling; solid: █ allowed; edge: the soft rim's share of a dome
+    # Against mountains at 1 % light even a dim tc_cloud is bright, so the far cap is low:
+    # a far tc_cloud peaks at ▒c / ░W dots, a mid one at █c, only a near one reaches █W.
+    "far":  {"cap": 0.30, "solid": False, "edge": 0.45},
+    "mid":  {"cap": 0.62, "solid": True,  "edge": 0.35},
+    "near": {"cap": 1.00, "solid": True,  "edge": 0.30},
+}
+
+
+def tc_luminance(hexs):
+    def lin(c):
+        c /= 255.0
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (int(hexs[i:i + 2], 16) for i in (1, 3, 5))
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+
+TC_LUM = {k: tc_luminance(v) for k, v in TC_TONES.items()}
+TC_LADDER = sorted([(0.0, " ", " ")] + [(TC_COVER[ch] * TC_LUM[t], ch, t) for ch in TC_COVER for t in TC_TONES
+                                     if not (ch == "█" and t in ("g", "d"))])
+TC_LADDER_SOFT = [s for s in TC_LADDER if s[1] != "█"]
+
+
+def tc_quantize(value, x, y, solid=True):
+    """The ladder step nearest the cell's value, dithered."""
+    target = math.sqrt(max(0.0, value)) + (BAYER8[y % 8][x % 8] / 64.0 - 0.5) * 2 * TC_DITHER
+    ladder = TC_LADDER if solid else TC_LADDER_SOFT
+    best = min(ladder, key=lambda s: abs(math.sqrt(s[0]) - target))
+    return best[1], best[2]
+
+
+def tc_halftone(field, W, H, solid=True):
+    """field(x, y) -> (coverage, brightness) at a point in cell units; returns rows."""
+    text, paint = [], []
+    for y in range(H):
+        t, p = [], []
+        for x in range(W):
+            acc = 0.0
+            for j in range(TC_SAMPLES):
+                for i in range(TC_SAMPLES):
+                    a, b = field(x + (i + 0.5) / TC_SAMPLES, y + (j + 0.5) / TC_SAMPLES)
+                    acc += a * b
+            ch, tone = tc_quantize(acc / (TC_SAMPLES * TC_SAMPLES), x, y, solid)
+            t.append(ch)
+            p.append(tone)
+        text.append("".join(t))
+        paint.append("".join(p))
+    return text, paint
+
+
+class TcNoise:
+    """Value noise on a lattice, from the tc_cloud's rng."""
+
+    def __init__(self, rng):
+        self.grid, self.rng = {}, rng
+
+    def _lat(self, i, j):
+        v = self.grid.get((i, j))
+        if v is None:
+            v = self.grid[(i, j)] = self.rng.random()
+        return v
+
+    def at(self, x, y, px, py):
+        u, v = x / px, y / py
+        i, j = math.floor(u), math.floor(v)
+        fu, fv = u - i, v - j
+        fu = fu * fu * (3 - 2 * fu)
+        fv = fv * fv * (3 - 2 * fv)
+        a = self._lat(i, j) * (1 - fu) + self._lat(i + 1, j) * fu
+        b = self._lat(i, j + 1) * (1 - fu) + self._lat(i + 1, j + 1) * fu
+        return a * (1 - fv) + b * fv
+
+
+# ---- the lit dome ---------------------------------------------------------------------------
+
+def tc_light_vector(light):
+    """x right, y down, z toward the viewer: the sun high to one side, a little in front."""
+    L = (0.55 * light, -0.60, 0.58)
+    n = math.sqrt(sum(c * c for c in L))
+    return tuple(c / n for c in L)
+
+
+def tc_domes_field(domes, base_y, light, noise, depth, cap_scale=1.0, base_dark=0.65, rough=0.22):
+    """domes: (cx, cy, rx, ry) in cells, half-ellipsoids seen from the front, outlines
+    roughened by noise; the flat base at row base_y. Returns field(x, y)."""
+    L = tc_light_vector(light)
+    dp = TC_DEPTHS[depth]
+    cap = dp["cap"] * cap_scale
+
+    def field(x, y):
+        if y > base_y:
+            return 0.0, 0.0
+        best, bn = None, 9.0
+        wobble = (noise.at(x, y, 2.6, 1.3) - 0.5) * 2 * rough
+        for (cx, cy, rx, ry) in domes:
+            u, v = (x - cx) / rx, (y - cy) / ry
+            e = u * u + v * v + wobble * (0.6 + 0.4 * abs(u))
+            if e < bn:
+                bn, best = e, (u, v)
+        if best is None or bn >= 1.0:
+            return 0.0, 0.0
+        u, v = best
+        h = math.sqrt(max(0.0, 1.0 - bn))
+        # the normal, in a space where a cell is twice as tall as it is wide
+        nx, ny, nz = u, v * 2.0, h
+        nn = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
+        lit = clamp((nx * L[0] + ny * L[1] + nz * L[2]) / nn)
+        b = 0.10 + 0.90 * lit ** 1.5
+        b *= 0.88 + 0.24 * (noise.at(x * 1.7, y * 1.1, 3.0, 1.5) - 0.5)   # the body's grain
+        b *= 1.0 - base_dark * smoothstep(base_y - 1.1, base_y + 0.05, y)
+        a = smoothstep(1.0, 1.0 - dp["edge"], bn)
+        return a, clamp(b) * cap
+    return field
+
+
+# ---- the kinds --------------------------------------------------------------------------
+
+TC_CUMULUS_SIZES = {0: (11, 2), 1: (23, 3), 2: (34, 4)}   # (cols, rows)
+
+
+def tc_cumulus_domes(size, rng):
+    W, H = TC_CUMULUS_SIZES[size]
+    base = H - 0.12
+    n = (3, 5, 7)[size]
+    domes = []
+    main_x = W * rng.uniform(0.36, 0.64)
+    main_rx = W * (0.25, 0.17, 0.13)[size] * rng.uniform(0.9, 1.15)
+    domes.append([main_x, base, main_rx, (H - 0.1) * rng.uniform(0.95, 1.0)])
+    for i in range(n - 1):
+        side = -1 if i % 2 == 0 else 1
+        step = (i // 2 + 1)
+        cx = main_x + side * (main_rx * rng.uniform(0.7, 1.1) + (step - 1) * W * rng.uniform(0.1, 0.16))
+        cx = clamp(cx, W * 0.1, W * 0.9)
+        ry = (H - 0.1) * rng.uniform(0.45, 0.8) / (1 + 0.25 * (step - 1))
+        rx = W * rng.uniform(0.11, 0.19) / (1 + 0.15 * (step - 1))
+        domes.append([cx, base, rx, ry])
+    return domes, base, W, H
+
+
+def tc_cumulus(size, variant, depth, rng, light=-1):
+    domes, base, W, H = tc_cumulus_domes(size, rng)
+    noise = TcNoise(random.Random(rng.random()))
+    if variant == "B":   # one hump grown: the breathing swap
+        k = 1 if len(domes) > 1 else 0
+        domes[k][2] *= 1.25
+        domes[k][3] = min(H - 0.1, domes[k][3] * 1.3)
+    return tc_halftone(tc_domes_field(domes, base, light, noise, depth), W, H, TC_DEPTHS[depth]["solid"])
+
+
+def tc_pair(size, depth, rng, light=-1):
+    state = rng.getstate()
+    a = tc_cumulus(size, "A", depth, rng, light)
+    rng.setstate(state)
+    b = tc_cumulus(size, "B", depth, rng, light)
+    return a, b
+
+
+TC_CIRRUS_SIZES = {0: (16, 1), 1: (22, 3), 2: (29, 4)}
+
+
+def tc_cirrus(size, depth, rng, light=-1):
+    """Streaks for a wind blowing left: the hooked head at the left, the strands trailing
+    right and drooping; the lower strands set further back and fainter. Far by nature."""
+    W, H = TC_CIRRUS_SIZES[size]
+    cap = TC_DEPTHS[depth]["cap"]
+    strands = []
+    for k in range(H):
+        x0 = 1 + k * (3 if size else 0) + rng.uniform(0, 1.5)
+        length = max(6.0, (W - 2 - x0) * rng.uniform(0.8, 1.0) * (1.0 - 0.1 * k))
+        strands.append((x0, k + 0.5, length, 1.0 - 0.2 * k))
+
+    def field(x, y):
+        a_best, b_best = 0.0, 0.0
+        for (x0, y0, length, glow) in strands:
+            t = (x - x0) / length
+            if t < -0.05 or t > 1.05:
+                continue
+            tc = clamp(t)
+            yc = y0 - 0.25 * math.sin(math.pi * tc * 0.5) + 0.4 * tc * tc   # hook, then droop
+            w = 0.5 * (1.0 - 0.55 * tc) + 0.06
+            a = smoothstep(w, w * 0.3, abs(y - yc)) * smoothstep(-0.05, 0.1, t)
+            b = glow * ((1.0 - tc) ** 0.7 * 0.9 + 0.1)
+            if a * b > a_best * b_best:
+                a_best, b_best = a, b
+        return a_best, b_best * cap
+    return tc_halftone(field, W, H, TC_DEPTHS[depth]["solid"])
+
+
+def tc_lenticular(depth, rng, light=-1):
+    W, H = 33, 3
+    cx = W / 2 + rng.uniform(-1, 1)
+    domes = [[cx, 2.3, W * 0.47, 2.1], [cx + rng.uniform(-2, 2), 1.05, W * 0.3, 1.0]]
+    noise = TcNoise(random.Random(rng.random()))
+    f = tc_domes_field(domes, 2.88, light, noise, depth, base_dark=0.5, rough=0.08)
+    return tc_halftone(f, W, H, TC_DEPTHS[depth]["solid"])
+
+
+def tc_roll(width, depth, rng, light=-1):
+    """The stratocumulus tc_roll: low domes in a row on a tube, grey only (capped at 0.7)."""
+    W, H = max(34, min(58, width)), 2
+    domes, x = [], rng.uniform(1.5, 3.5)
+    while x < W - 1.5:
+        rx = rng.uniform(2.6, 4.2)
+        domes.append([x, 1.88, rx, rng.uniform(1.4, 1.9)])
+        x += rx * rng.uniform(1.3, 1.7)
+    noise = TcNoise(random.Random(rng.random()))
+    f = tc_domes_field(domes, 1.9, light, noise, depth, cap_scale=0.7, base_dark=0.6, rough=0.18)
+    return tc_halftone(f, W, H, TC_DEPTHS[depth]["solid"])
+
+
+def tc_mackerel(depth, rng, light=-1):
+    """A field of scales: tiny domes on a brick lattice (4 cols, rows offset 2), two or
+    three rows, the outer rows shorter (a wedge), a fifth left out, the top row lit."""
+    H = rng.randint(2, 3)
+    units = rng.randint(8, 12)
+    W = min(50, units * 4 + 4)
+    cap = TC_DEPTHS[depth]["cap"]
+    domes = []
+    for r in range(H):
+        short = abs(r - (H - 1) / 2) * 2 + 1
+        for u in range(units):
+            cx = 2 + u * 4 + (2 if r % 2 else 0)
+            if u < short / 2 - 0.5 or u > units - short / 2 - 0.5 or rng.random() < 0.2:
+                continue
+            domes.append([cx, r + 0.55, 1.6, 0.62, r])
+
+    def field(x, y):
+        a_best, b_best = 0.0, 0.0
+        for (cx, cy, rx, ry, r) in domes:
+            u, v = (x - cx) / rx, (y - cy) / ry
+            e = u * u + v * v
+            if e < 1:
+                a = smoothstep(1.0, 0.55, e)
+                b = (0.9 if r == 0 else 0.45) * (0.6 + 0.4 * (1 - e)) * (1.0 - 0.3 * clamp(-u * light))
+                if a * b > a_best * b_best:
+                    a_best, b_best = a, b
+        return a_best, b_best * cap
+    return tc_halftone(field, W, H, TC_DEPTHS[depth]["solid"])
+
+
+def tc_mist(width, depth, rng, light=-1):
+    """Spear tc_mist over the lake: three or four rows of straight-edged bands, each row's
+    band its own length and offset, the ends tapered over six cells, a kirihaku dot one
+    cell in fourteen. Thin light: ░ g with ▒ g in the middle, the dots ░ c."""
+    W, H = max(40, min(80, width)), rng.randint(3, 4)
+    bands = []
+    for r in range(H):
+        length = int(W * rng.uniform(0.45, 0.8))
+        x0 = rng.randint(0, W - length)
+        bands.append((x0, x0 + length, rng.uniform(0.09, 0.14)))
+    dots = {(r, x) for r in range(H) for x in range(W) if rng.random() < 1 / 14}
+
+    def field(x, y):
+        r = int(y)
+        if r >= H:
+            return 0.0, 0.0
+        x0, x1, b = bands[r]
+        if x < x0 or x > x1:
+            return 0.0, 0.0
+        end = min(x - x0, x1 - x)
+        if (r, int(x)) in dots:
+            return 1.0, 0.17
+        return smoothstep(-1, 6, end), b
+    return tc_halftone(field, W, H, solid=False)
+
+
+def tc_cloud(kind, size, variant, depth, rng, light=-1):
+    if kind == "cumulus":
+        return tc_cumulus(size, variant, depth, rng, light)
+    if kind == "cirrus":
+        return tc_cirrus(size, depth, rng, light)
+    if kind == "lenticular":
+        return tc_lenticular(depth, rng, light)
+    if kind == "roll":
+        return tc_roll(size, depth, rng, light)
+    if kind == "mackerel":
+        return tc_mackerel(depth, rng, light)
+    if kind == "mist":
+        return tc_mist(size, depth, rng, light)
+    raise ValueError(kind)
+
+
+# ---- the tc_fade --------------------------------------------------------------------------
+
+def tc_fade(text, paint, p, solid=True):
+    """The tc_cloud at tc_fade p: every cell's light scaled by p and put back on the ladder with
+    the cell's own dither offset. Call it on the full tc_cloud each step."""
+    out_t, out_p = [], []
+    for y, (row, prow) in enumerate(zip(text, paint)):
+        t, pp = [], []
+        for x, (ch, tone) in enumerate(zip(row, prow)):
+            if ch == " ":
+                c2, t2 = " ", " "
+            else:
+                c2, t2 = tc_quantize(TC_COVER[ch] * TC_LUM[tone] * p, x, y, solid)
+            t.append(c2)
+            pp.append(t2)
+        out_t.append("".join(t))
+        out_p.append("".join(pp))
+    return out_t, out_p
+
+
+class Cloud:
+    __slots__ = ("kind", "size", "depth", "behind", "rows", "paint", "alt", "alt_paint", "x", "y", "speed",
+                 "born", "life", "phase", "phase_at", "fade", "ends", "breath_at", "width")
+
+    def __init__(self, kind, text, paint, x, y, speed, born, life, fade, ends, alt=None, alt_paint=None):
         self.kind, self.size, self.rows, self.paint = kind, None, text, paint
-        self.alt, self.alt_paint = alt, (paint_for(alt, _heap) if alt else None)
+        self.depth = "near"       # the tonal set's far, mid or near: its tones and pace
+        self.behind = False       # passes behind the mountains (drawn on open sky only)
+        self.alt, self.alt_paint = alt, (alt_paint or (paint_for(alt, _heap) if alt else None))
         self.x, self.y, self.speed, self.born, self.life, self.fade = float(x), y, speed, born, life, fade
         self.ends = ends          # "edge": comes and goes by the screen's edge; "fade": forms and dissolves
         self.phase, self.phase_at = ("in" if ends == "fade" else "on"), born
@@ -1835,17 +2161,33 @@ class Cloud:
 
 class Sky:
     FADE = {"cirrus": 40, "mackerel": 60, "lenticular": 30, "cumulus": 45, "mist": 40}
-    LEVELS = {("W", 2): "W", ("W", 1): "g", ("W", 0): "d", ("g", 2): "g", ("g", 1): "g", ("g", 0): "d",
+    LEVELS = {("W", 2): "W", ("W", 1): "g", ("W", 0): "d", ("c", 2): "c", ("c", 1): "g", ("c", 0): "d",
+              ("g", 2): "g", ("g", 1): "g", ("g", 0): "d",
               ("d", 2): "d", ("d", 1): "d", ("d", 0): "d"}
+
+    # The tonal set's depths: rows (shares of the height) by kind, speeds (columns a second
+    # at 135 columns), the chance of passing behind the summits, how many at once.
+    TONAL = {
+        "far":  {"rows": {"cumulus": (0.03, 0.20), "cirrus": (0.02, 0.16), "mackerel": (0.06, 0.22)},
+                 "speed": {"cumulus": (0.09, 0.09, 0.09), "cirrus": 0.06, "mackerel": 0.10},
+                 "behind": {"cumulus": 0.5, "cirrus": 0.6, "mackerel": 0.5}, "at_once": 3},
+        "mid":  {"rows": {"cumulus": (0.14, 0.30), "lenticular": (0.14, 0.26)},
+                 "speed": {"cumulus": (0.20, 0.30, 0.30), "lenticular": 0.0},
+                 "behind": {"cumulus": 0.2, "lenticular": 0.5}, "at_once": 2},
+        "near": {"rows": {"cumulus": (0.25, 0.42), "roll": (0.30, 0.45)},
+                 "speed": {"cumulus": (0.45, 0.45, 0.55), "roll": 0.50}, "behind": {}, "at_once": 1},
+    }
 
     def __init__(self, scr, rng, attrs):
         self.scr, self.rng, self.attrs = scr, rng, attrs
         self.H, self.W = scr.getmaxyx()
         self.backdrop = None  # the landscape the clouds drift over, if there is one
+        self.set = "ink"      # the cloud set: "ink" (drawn outlines) or "tonal" (shaded masses with depth)
+        self.light = -1       # the light's side, the landscape's: -1 from the left, +1 from the right
         self.wind = rng.choice((-1, 1))
         self.clouds = []
         self.frame = {}         # (y, x) -> (char, attr) as drawn now
-        self.events = []        # (time, kind, size) still to be born this tree
+        self.events = []        # (time, kind, size, depth) still to be born this tree
         self.tree_start = None
         self.floor = self.H - 1  # the row the mist must keep clear of (the planter's rim)
         self.last_draw = None
@@ -1864,6 +2206,9 @@ class Sky:
         span = cycle if cycle else 600.0
         self.mood = rng.choices(("clear", "fair", "high", "misty"), (20, 50, 15, 15))[0]
         self.rolled = False
+        if self.set == "tonal":
+            self.events = sorted(((now + t, k, s, d) for t, d, k, s in self.plan_tonal(span)), key=lambda e: e[0])
+            return
         events = []
         cirrus = {"clear": rng.randint(1, 2), "fair": 1, "high": 2, "misty": rng.randint(0, 1)}[self.mood]
         for i in range(cirrus):
@@ -1886,7 +2231,44 @@ class Sky:
         mists = rng.randint(1, 2) if self.mood == "misty" else (1 if rng.random() < 0.1 else 0)
         for _ in range(mists):
             events.append((rng.uniform(0, span * 0.6), "mist", None))
-        self.events = sorted(((now + t, k, s) for t, k, s in events), key=lambda e: e[0])
+        self.events = sorted(((now + t, k, s, None) for t, k, s in events), key=lambda e: e[0])
+
+    def plan_tonal(self, span):
+        """The tonal set's clouds for one tree, by mood: (time, depth, kind, size). Far
+        clouds are most of them, near ones rare; a high sky is cirrus and mackerel with
+        nothing near; a misty one is mist and at most one far cloud."""
+        rng = self.rng
+
+        def at(lo=0.0, hi=0.8):
+            return rng.uniform(lo * span, hi * span)
+        ev = []
+        if self.mood == "clear":
+            for _ in range(rng.randint(1, 2)):
+                ev.append((at(), "far", rng.choice(("cirrus", "cumulus", "cumulus")), None))
+            if rng.random() < 0.5:
+                ev.append((at(), "mid", "cumulus", None))
+        elif self.mood == "fair":
+            for _ in range(3):
+                ev.append((at(), "far", rng.choice(("cirrus", "cumulus", "cumulus", "mackerel")), None))
+            for _ in range(2):
+                ev.append((at(), "mid", "lenticular" if rng.random() < 1 / 6 else "cumulus", None))
+            for _ in range(rng.randint(1, 2)):
+                ev.append((at(0.0, 0.7), "near", "cumulus", None))
+        elif self.mood == "high":
+            ev.append((at(0.0, 0.5), "far", "cirrus", 2))
+            ev.append((at(), "far", "cirrus", 1))
+            if rng.random() < 0.7:
+                ev.append((at(0.0, 0.3), "far", "mackerel", None))
+            if rng.random() < 0.5:
+                ev.append((at(), "mid", "cumulus", None))
+        else:  # misty
+            for _ in range(rng.randint(1, 2)):
+                ev.append((at(0.0, 0.6), "far", "mist", None))
+            if rng.random() < 0.5:
+                ev.append((at(), "far", rng.choice(("cirrus", "cumulus")), None))
+        if self.mood != "misty" and rng.random() < 0.1:
+            ev.append((at(0.0, 0.6), "far", "mist", None))
+        return ev
 
     def rows_for(self, kind, size):
         lo, hi = {"cirrus": (0.02, 0.16), "mackerel": (0.06, 0.22), "lenticular": (0.14, 0.26),
@@ -1894,8 +2276,10 @@ class Sky:
                   "roll": (0.30, 0.48), "mist": (0.52, 0.78)}[kind]
         return int(lo * self.H), int(hi * self.H)
 
-    def birth(self, now, kind, size, ends=None):
+    def birth(self, now, kind, size, ends=None, depth=None):
         """A new cloud of the kind, placed on free rows, by the edge or in place."""
+        if self.set == "tonal":
+            return self.birth_tonal(now, kind, size, depth or "far", ends)
         rng, W = self.rng, self.W
         scale = W / 135.0
         alt = None
@@ -1938,14 +2322,68 @@ class Sky:
         else:  # mist
             text, paint = mist_band(rng, rng.randint(min(40, W), max(min(40, W), int(0.6 * W))))
             speed, ends, life = 0.0, "fade", rng.uniform(120, 240)
+        lo, hi = self.rows_for(kind, size)
+        self.place(now, kind, size, text, paint, speed, ends, life, lo, hi, alt)
+
+    def birth_tonal(self, now, kind, size, depth, ends=None):
+        """A cloud of the tonal set: shaped for its depth, lit from the landscape's side,
+        paced and placed by its depth, behind the summits now and then."""
+        rng, W, light = self.rng, self.W, self.light
+        scale = W / 135.0
+        depth = {"cirrus": "far", "mackerel": "far", "lenticular": "mid", "roll": "near", "mist": "far"}.get(kind, depth)
+        if kind != "mist" and sum(1 for c in self.clouds if c.depth == depth and c.kind != "mist") \
+                >= self.TONAL[depth]["at_once"]:
+            return
+        alt = alt_paint = None
+        if kind == "cumulus":
+            if size is None:
+                size = {"far": 0, "mid": rng.choice((0, 1)), "near": (1 if rng.random() < 2 / 3 else 2)}[depth]
+            if (depth == "near" and ends is None and rng.random() < 0.2 and not self.rolled
+                    and not any(c.kind == "roll" for c in self.clouds)):
+                kind, self.rolled = "roll", True
+        if kind == "cumulus":
+            (text, paint), (alt, alt_paint) = tc_pair(size, depth, rng, light)
+            speed = self.TONAL[depth]["speed"]["cumulus"][size] * scale
+            ends = ends or ("edge" if (size == 2 or rng.random() < 0.6) else "fade")
+            life = rng.uniform(180, 300)
+        elif kind == "cirrus":
+            size = rng.choice((0, 1, 1, 2)) if size is None else size
+            text, paint = tc_cirrus(size, "far", rng, light)
+            if self.wind > 0:
+                text, paint = mirrored(text), [r[::-1] for r in paint]
+            speed, ends, life = 0.06 * scale, "fade", rng.uniform(180, 360)
+        elif kind == "mackerel":
+            text, paint = tc_mackerel("far", rng, light)
+            speed, ends, life = 0.10 * scale, "fade", rng.uniform(240, 360)
+        elif kind == "lenticular":
+            text, paint = tc_lenticular("mid", rng, light)
+            speed, ends, life = 0.0, "fade", rng.uniform(180, 300)
+        elif kind == "roll":
+            text, paint = tc_roll(rng.randint(34, 58), "near", rng, light)
+            speed, ends, life = 0.50 * scale, "edge", 0
+        else:  # mist
+            text, paint = tc_mist(rng.randint(min(40, W), max(min(40, W), int(0.6 * W))), "far", rng, light)
+            speed, ends, life = 0.0, "fade", rng.uniform(120, 240)
+        if kind == "mist":
+            lo, hi = self.rows_for(kind, size)
+        else:
+            lo, hi = (int(v * self.H) for v in self.TONAL[depth]["rows"][kind])
+        cloud = self.place(now, kind, size, text, paint, speed, ends, life, lo, hi, alt, alt_paint)
+        if cloud:
+            cloud.depth = depth
+            cloud.behind = kind != "mist" and rng.random() < self.TONAL[depth]["behind"].get(kind, 0)
+
+    def place(self, now, kind, size, text, paint, speed, ends, life, lo, hi, alt=None, alt_paint=None):
+        """Puts a new cloud on free rows between lo and hi, by the upwind edge or in a
+        place its life's drift keeps in view; returns it, or None when there is no room."""
+        rng, W = self.rng, self.W
         width = max(len(r) for r in text)
         if width > W:
-            return
-        lo, hi = self.rows_for(kind, size)
+            return None
         if kind == "mist":
             hi = min(hi, self.floor - 7 - len(text))
             if hi < lo:
-                return
+                return None
         for _try in range(6):
             y = rng.randint(lo, max(lo, hi))
             if ends == "edge":
@@ -1959,10 +2397,11 @@ class Sky:
             if not any(abs(c.y - y) < max(len(c.rows), len(text)) and c.x - 8 < x + width and x - 8 < c.x + c.width
                        for c in self.clouds):
                 cloud = Cloud(kind, text, paint, x, y, speed * self.wind, now, life,
-                              self.FADE.get(kind, 40), ends, alt)
+                              self.FADE.get(kind, 40), ends, alt, alt_paint)
                 cloud.size = size
                 self.clouds.append(cloud)
-                return
+                return cloud
+        return None
 
     # ---- time -------------------------------------------------------------------------------
 
@@ -1974,9 +2413,9 @@ class Sky:
             return
         rng = self.rng
         while self.events and self.events[0][0] <= now:
-            _t, kind, size = self.events.pop(0)
+            _t, kind, size, depth = self.events.pop(0)
             if len(self.clouds) < 5:
-                self.birth(now, kind, size)
+                self.birth(now, kind, size, depth=depth)
         kept = []
         for c in self.clouds:
             if self.last_draw is not None:
@@ -2002,7 +2441,7 @@ class Sky:
         elif self.empty_since is None:
             self.empty_since = now
         elif now - self.empty_since >= 90:  # never an empty sky for long, whatever the mood
-            self.birth(now, "cumulus" if rng.random() < 2 / 3 else "cirrus", 0, ends="fade")
+            self.birth(now, "cumulus" if rng.random() < 2 / 3 else "cirrus", 0, ends="fade", depth="far")
             self.empty_since = None
         self.last_draw = now
         if not draw:
@@ -2015,6 +2454,21 @@ class Sky:
             elif c.phase == "out":
                 p = 1.0 - (now - c.phase_at) / c.fade
             x0 = int(round(c.x))
+            if self.set == "tonal":  # the whole mass fades together, each cell re-stepped on its ladder
+                rows, paint = c.rows, c.paint
+                if p < 1.0:
+                    rows, paint = tc_fade(rows, paint, max(0.0, p), TC_DEPTHS[c.depth]["solid"])
+                for dy, (row, prow) in enumerate(zip(rows, paint)):
+                    for dx, (ch, pt) in enumerate(zip(row, prow)):
+                        if pt == " ":
+                            continue
+                        y, x = c.y + dy, x0 + dx
+                        if not (0 <= y < self.H and 0 <= x < self.W):
+                            continue
+                        if c.behind and self.backdrop and self.backdrop.layer[y][x] not in " C":
+                            continue  # passing behind the mountains
+                        frame[(y, x)] = (ch, self.attrs[pt])
+                continue
             for dy, (row, paint) in enumerate(zip(c.rows, c.paint)):
                 for dx, (ch, pt) in enumerate(zip(row, paint)):
                     if pt == " ":
@@ -2030,8 +2484,11 @@ class Sky:
                     if level < 0:
                         continue
                     y, x = c.y + dy, x0 + dx
-                    if 0 <= y < self.H and 0 <= x < self.W:
-                        frame[(y, x)] = (ch, self.attrs[self.LEVELS[(pt, level)]])
+                    if not (0 <= y < self.H and 0 <= x < self.W):
+                        continue
+                    if c.behind and self.backdrop and self.backdrop.layer[y][x] not in " C":
+                        continue  # passing behind the mountains
+                    frame[(y, x)] = (ch, self.attrs[self.LEVELS[(pt, level)]])
         for cell in self.frame:
             if cell not in frame and cell not in grid and cell not in busy:
                 if self.backdrop:
@@ -2047,6 +2504,13 @@ class Sky:
         if self.backdrop:  # over the landscape's own background there
             attr = PAIRS.on(attr, self.backdrop.bg[cell[0]][cell[1]])
         self.put_raw(cell, ch, attr)
+
+    def setup(self, cfg, backdrop):
+        """The cloud set and the light for this run: the tonal set over a landscape (or
+        when asked for), the ink set on a black sky; the light from the landscape's side."""
+        self.backdrop = backdrop
+        self.set = "tonal" if cfg["clouds"] == "tonal" or (cfg["clouds"] == "auto" and backdrop) else "ink"
+        self.light = backdrop.meta["profiles"]["light"] if backdrop else -1
 
     def put_raw(self, cell, ch, attr):
         try:
@@ -3587,7 +4051,7 @@ def screensaver(scr, args, cfg):
             attrs = make_attrs(cfg)  # the clouds' slots follow the palette just set
         if sky is None and cfg["sky"]:
             sky = Sky(scr, random.Random(None if seed is None else f"sky {seed}"), attrs)
-            sky.backdrop = backdrop
+            sky.setup(cfg, backdrop)
             # Five minutes of sky before the first tree, so it is not born under an empty one.
             sky.new_tree(time.monotonic() - 300, cfg["cycle"], scr.getmaxyx()[0] - 1)
             for t in range(300, 0, -1):

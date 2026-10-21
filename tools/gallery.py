@@ -164,6 +164,42 @@ def landscape_html(mod, seed, W=135, H=120):
     return "\n".join(out)
 
 
+TONAL = [  # the tonal set's cards: (title, where, note, pieces (kind, size, depth))
+    ("Tonal cumulus, far / mid / near", "sky = yes, clouds = tonal",
+     "Shaded masses lit from the landscape's side, halftoned into four greys: far ones faint and never solid, mid ones capped at the glow, near ones with solid white crowns and a dark underside; no outline.",
+     [("cumulus", 0, "far"), ("cumulus", 1, "mid"), ("cumulus", 2, "near"), ("cumulus", 1, "near")]),
+    ("Tonal cirrus and mackerel (far)", "sky = yes, clouds = tonal",
+     "Streaks on a hooked, drooping path with a bright head; a lattice of pea domes, the top row lit. Far by nature: some pass behind the summits.",
+     [("cirrus", 0, "far"), ("cirrus", 1, "far"), ("cirrus", 2, "far"), ("mackerel", 0, "far")]),
+    ("Tonal lenticular, roll and mist", "sky = yes, clouds = tonal",
+     "Two flat lenses standing still (mid); low domes on a tube (near); straight-edged bands of thin light over the lake with the gold-leaf dots.",
+     [("lenticular", 0, "mid"), ("roll", 46, "near"), ("mist", 66, "far")]),
+]
+
+
+def render_tonal(mod, pieces, seed=3):
+    """The tonal clouds one under another, in the palette's own greys on near-black."""
+    rgb = {let: mod.PALETTE_DAY[slot][0] for let, slot in (("W", 13), ("c", 14), ("g", 7), ("d", 8))}
+    rng = random.Random(seed)
+    out = []
+    for kind, size, depth in pieces:
+        text, paint = mod.tc_cloud(kind, size, "A", depth, rng, -1)
+        for row, prow in zip(text, paint):
+            line, run, key = [], [], None
+            for ch, pt in zip(row, prow):
+                k = pt if pt != " " else None
+                if k != key and run:
+                    line.append(cell_span(run, (key, 0), rgb) if key else html.escape("".join(run)))
+                    run = []
+                key = k
+                run.append(ch)
+            if run:
+                line.append(cell_span(run, (key, 0), rgb) if key else html.escape("".join(run)))
+            out.append("  " + "".join(line).rstrip())
+        out.append("")
+    return "\n".join(out).rstrip("\n")
+
+
 def cell_span(chars, key, rgb):
     fg, bg = key
     style = f"color:{rgb[fg]}" + (f";background:{rgb[bg]}" if bg else "")
@@ -214,7 +250,9 @@ def main():
         body, report = render(mod, cfg, 3, dict({"style": "moyogi", "twin": "no"}, **over))
         planters.append(card(title, setting, note, body, report.get("planter", "")))
         print("rendered", title)
-    sky = [card(title, "sky = yes", note, render_sky(mod, pieces), where) for title, where, note, pieces in SKY]
+    sky = [card(title, "sky = yes, clouds = ink", note, render_sky(mod, pieces), where) for title, where, note, pieces in SKY]
+    sky += [card(title, setting, note, render_tonal(mod, pieces), "the tonal set: the default over a landscape")
+            for title, setting, note, pieces in TONAL]
     land = [card(f"The landscape, seed {seed}", "landscape = auto",
                  "Snowy peaks with hatched shade faces, a far range in haze, wooded hills, the spear mist, the still lake, the framing pines, the black table; drawn once per run from the seed, in blues and greys only." if seed == 1 else "",
                  landscape_html(mod, seed), f"seed {seed}; the tree grows over the lake, the planter on the table")
@@ -232,7 +270,7 @@ def main():
 <h2>Forms</h2><section class="grid">{"".join(forms)}</section>
 <h2>Planters</h2><section class="grid">{"".join(planters)}</section>
 <h2>Sky</h2>
-<p class="note">Clouds drift behind the tree, drawn only where nothing else is, in three greys on the black: real cloud kinds at their real heights (rows as a share of the screen, from the top), one wind for the whole run, a mood per tree (clear, fair, high or misty). Each enters by the upwind edge or forms in place and dissolves, tail first.</p>
+<p class="note">Clouds drift behind the tree, drawn only where nothing else is: real cloud kinds at their real heights (rows as a share of the screen, from the top), one wind for the whole run, a mood per tree (clear, fair, high or misty). Each enters by the upwind edge or forms in place and dissolves. Two sets: the <em>ink</em> clouds, drawn outlines in three greys, the clouds of the black sky; and the <em>tonal</em> clouds, shaded masses in four greys at three depths (far ones pass behind the summits), the default over the landscape.</p>
 <section class="grid">{"".join(sky)}</section>
 <h2>Landscape</h2>
 <p class="note">The mountain landscape behind the clouds: a blue print behind a coloured tree, painted in RGB, halftoned into ░ ▒ █ over four backgrounds, and inked with ASCII strokes. The console's sixteen colour slots are set to these exact colours where the terminal allows it.</p>

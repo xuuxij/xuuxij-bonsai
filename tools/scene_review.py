@@ -48,7 +48,7 @@ def main():
     backdrop.draw(scr)
     rng = random.Random(seed)
     sky = mod.Sky(scr, random.Random(f"sky {seed}"), attrs)
-    sky.backdrop = backdrop
+    sky.setup(cfg, backdrop)
     t0 = clock[0]
     sky.new_tree(clock[0] - 300, cfg["cycle"], H - 1)
     for t in range(300, 0, -1):
