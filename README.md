@@ -92,6 +92,26 @@ console the trunk is yellow, the leaves green with a lit cap, the pot red clay w
 gold key-fret band.* Every form and planter is shown in colour in
 [docs/gallery.html](docs/gallery.html).
 
+## What it looks like
+
+Renders of the program's own screen writes (`tools/scene_review.py`), at the console this
+was made for, 135 columns by 120 rows, portrait; the console's own ░ ▒ glyphs differ a
+little in texture. The gallery of every form, planter and cloud is
+[docs/gallery.html](docs/gallery.html).
+
+| | |
+|---|---|
+| ![An informal upright on the landscape](docs/renders/portrait-moyogi.png) | ![Its autumn: the leaves falling over the lake](docs/renders/portrait-autumn.png) |
+| An informal upright over the landscape, the clouds of the tonal set above the ranges | Its autumn: the leaves letting go over the mist and the lake |
+| ![The bare tree before it crumbles](docs/renders/portrait-bare.png) | ![A literati with its pads over the mist](docs/renders/portrait-bunjin.png) |
+| The bare tree, the carpet on the table | A literati, its pads up on the mist |
+| ![A slanting tree in the glazed oval](docs/renders/portrait-shakan-oval.png) | ![The black sky with the ink clouds](docs/renders/black-sky-ink-clouds.png) |
+| A slanting tree in the oval, the second tree of a run | `landscape = no`: the black sky with the ink clouds |
+
+![A landscape terminal, 200 by 55](docs/renders/landscape-200x55.png)
+
+The same program on a landscape terminal, 200 columns by 55 rows.
+
 ## Install
 
 One line, on any Linux with Python 3.8 or later:

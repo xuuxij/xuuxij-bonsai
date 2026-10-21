@@ -44,8 +44,10 @@ def main():
     scr = Screen(clock, log)
     attrs = mod.make_attrs(cfg, live=False)
     pairs = mod.PAIRS
-    backdrop = mod.Backdrop(W, H, seed, pairs)
-    backdrop.draw(scr)
+    backdrop = None
+    if cfg["landscape"] != "no":
+        backdrop = mod.Backdrop(W, H, seed, pairs)
+        backdrop.draw(scr)
     rng = random.Random(seed)
     sky = mod.Sky(scr, random.Random(f"sky {seed}"), attrs)
     sky.setup(cfg, backdrop)
