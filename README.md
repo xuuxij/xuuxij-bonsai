@@ -190,6 +190,9 @@ restart. A flag on the command line wins over the file.
 | `stand_color` | `red` | the stand's colour (red = rosewood) |
 | `sky` | `yes` | clouds drifting behind the tree (no = a black sky) |
 | `clouds` | `auto` | the clouds' set: auto (tonal over a landscape, ink on a black sky), ink (the drawn outlines) or tonal (shaded masses with depth) |
+| `clouds_far` | `2` | how many far clouds come, against the design: the high ones around the peaks, some passing behind them (0 = none, 1 = as designed, 2 = twice) (0 to 5) |
+| `clouds_mid` | `1` | how many mid clouds come, in front of the ranges (0 to 5) |
+| `clouds_near` | `1` | how many near clouds come, the large bright ones (0 to 5) |
 | `landscape` | `auto` | the mountain landscape behind the clouds: auto (with the sky, when the screen has colours), yes or no; read when the program starts |
 | `seed` | `none` | a number gives the same trees every time; none = random |
 

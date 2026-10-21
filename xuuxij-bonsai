@@ -182,6 +182,10 @@ SETTINGS = {
     "sky":         (True, bool, None, None, "clouds drifting behind the tree (no = a black sky)"),
     "clouds":      ("auto", "clouds", None, None, "the clouds' set: auto (tonal over a landscape, ink on a "
                     "black sky), ink (the drawn outlines) or tonal (shaded masses with depth)"),
+    "clouds_far":  (2.0, float, 0.0, 5.0, "how many far clouds come, against the design: the high ones "
+                    "around the peaks, some passing behind them (0 = none, 1 = as designed, 2 = twice)"),
+    "clouds_mid":  (1.0, float, 0.0, 5.0, "how many mid clouds come, in front of the ranges (0 to 5)"),
+    "clouds_near": (1.0, float, 0.0, 5.0, "how many near clouds come, the large bright ones (0 to 5)"),
     "landscape":   ("auto", "tristate", None, None, "the mountain landscape behind the clouds: auto (with "
                     "the sky, when the screen has colours), yes or no; read when the program starts"),
     "seed":        (None, "seed", None, None, "a number gives the same trees every time; none = random"),
@@ -2247,6 +2251,7 @@ class Sky:
         self.backdrop = None  # the landscape the clouds drift over, if there is one
         self.set = "ink"      # the cloud set: "ink" (drawn outlines) or "tonal" (shaded masses with depth)
         self.light = -1       # the light's side, the landscape's: -1 from the left, +1 from the right
+        self.amount = {"far": 2.0, "mid": 1.0, "near": 1.0}  # how many of each depth, against the design
         self.wind = rng.choice((-1, 1))
         self.clouds = []
         self.frame = {}         # (y, x) -> (char, attr) as drawn now
@@ -2274,6 +2279,7 @@ class Sky:
             return
         events = []
         cirrus = {"clear": rng.randint(1, 2), "fair": 1, "high": 2, "misty": rng.randint(0, 1)}[self.mood]
+        cirrus = int(cirrus * self.amount["far"] + rng.random())  # the far setting counts here too
         for i in range(cirrus):
             size = (2, 1)[i] if self.mood == "high" else rng.choice((0, 1, 1, 2))
             events.append((rng.uniform(0, span * 0.7), "cirrus", size))
@@ -2304,30 +2310,33 @@ class Sky:
 
         def at(lo=0.0, hi=0.8):
             return rng.uniform(lo * span, hi * span)
+
+        def n(base, depth):  # the design's count, scaled by the setting for that depth
+            return int(base * self.amount[depth] + rng.random())
         ev = []
         if self.mood == "clear":
-            for _ in range(rng.randint(1, 2)):
+            for _ in range(n(rng.randint(1, 2), "far")):
                 ev.append((at(), "far", rng.choice(("cirrus", "cumulus", "cumulus")), None))
-            if rng.random() < 0.5:
+            for _ in range(n(0.5, "mid")):
                 ev.append((at(), "mid", "cumulus", None))
         elif self.mood == "fair":
-            for _ in range(3):
+            for _ in range(n(3, "far")):
                 ev.append((at(), "far", rng.choice(("cirrus", "cumulus", "cumulus", "mackerel")), None))
-            for _ in range(2):
+            for _ in range(n(2, "mid")):
                 ev.append((at(), "mid", "lenticular" if rng.random() < 1 / 6 else "cumulus", None))
-            for _ in range(rng.randint(1, 2)):
+            for _ in range(n(rng.randint(1, 2), "near")):
                 ev.append((at(0.0, 0.7), "near", "cumulus", None))
         elif self.mood == "high":
-            ev.append((at(0.0, 0.5), "far", "cirrus", 2))
-            ev.append((at(), "far", "cirrus", 1))
-            if rng.random() < 0.7:
+            for i in range(n(2, "far")):
+                ev.append((at(0.0, 0.5 if i == 0 else 0.8), "far", "cirrus", (2, 1)[i % 2]))
+            for _ in range(n(0.7, "far")):
                 ev.append((at(0.0, 0.3), "far", "mackerel", None))
-            if rng.random() < 0.5:
+            for _ in range(n(0.5, "mid")):
                 ev.append((at(), "mid", "cumulus", None))
         else:  # misty
             for _ in range(rng.randint(1, 2)):
                 ev.append((at(0.0, 0.6), "far", "mist", None))
-            if rng.random() < 0.5:
+            for _ in range(n(0.5, "far")):
                 ev.append((at(), "far", rng.choice(("cirrus", "cumulus")), None))
         if self.mood != "misty" and rng.random() < 0.1:
             ev.append((at(0.0, 0.6), "far", "mist", None))
@@ -2395,7 +2404,7 @@ class Sky:
         scale = W / 135.0
         depth = {"cirrus": "far", "mackerel": "far", "lenticular": "mid", "roll": "near", "mist": "far"}.get(kind, depth)
         if kind != "mist" and sum(1 for c in self.clouds if c.depth == depth and c.kind != "mist") \
-                >= self.TONAL[depth]["at_once"]:
+                >= self.at_once(depth):
             return
         alt = alt_paint = None
         if kind == "cumulus":
@@ -2436,6 +2445,11 @@ class Sky:
             cloud.depth = depth
             cloud.behind = kind != "mist" and rng.random() < self.TONAL[depth]["behind"].get(kind, 0)
 
+    def at_once(self, depth):
+        """How many clouds of a depth may be in the sky together: the design's count,
+        scaled by the setting for that depth."""
+        return max(1, int(round(self.TONAL[depth]["at_once"] * self.amount[depth])))
+
     def place(self, now, kind, size, text, paint, speed, ends, life, lo, hi, alt=None, alt_paint=None):
         """Puts a new cloud on free rows between lo and hi, by the upwind edge or in a
         place its life's drift keeps in view; returns it, or None when there is no room."""
@@ -2475,9 +2489,10 @@ class Sky:
         if draw and self.last_draw is not None and now - self.last_draw < SKY_TICK:
             return
         rng = self.rng
+        most = 5 if self.set == "ink" else 1 + sum(self.at_once(d) for d in ("far", "mid", "near"))
         while self.events and self.events[0][0] <= now:
             _t, kind, size, depth = self.events.pop(0)
-            if len(self.clouds) < 5:
+            if len(self.clouds) < most:
                 self.birth(now, kind, size, depth=depth)
         kept = []
         for c in self.clouds:
@@ -2574,6 +2589,11 @@ class Sky:
         self.backdrop = backdrop
         self.set = "tonal" if cfg["clouds"] == "tonal" or (cfg["clouds"] == "auto" and backdrop) else "ink"
         self.light = backdrop.meta["profiles"]["light"] if backdrop else -1
+        self.amounts(cfg)
+
+    def amounts(self, cfg):
+        """How many clouds of each depth, from the settings (read again for every tree)."""
+        self.amount = {d: cfg[f"clouds_{d}"] for d in ("far", "mid", "near")}
 
     def put_raw(self, cell, ch, attr):
         try:
@@ -4129,6 +4149,7 @@ def screensaver(scr, args, cfg):
         tree.sky, tree.backdrop = sky, backdrop
         if sky:
             sky.attrs = attrs
+            sky.amounts(cfg)
         if inherit is None:
             tree.draw_pot()
         log_path = os.environ.get("XUUXIJ_BONSAI_LOG")  # for timing checks only
